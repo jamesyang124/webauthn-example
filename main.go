@@ -55,9 +55,19 @@ func main() {
 		switch string(ctx.Path()) {
 		case "/":
 			fmt.Fprintf(ctx, "Welcome to the high-performance API server!")
-		case "/register":
+		case "/auth/login":
+			fmt.Fprintf(ctx, "Welcome to the email/username basic auth login!")
+		case "/auth/register":
+			fmt.Fprintf(ctx, "Welcome to the email/username basic auth registration!")
+		case "/webauthn/register":
+			username := string(ctx.FormValue("username"))
+			if username == "" {
+				username = "user1"
+			}
+			ctx.QueryArgs().Add("username", username)
+
 			examples.HandleRegister(ctx, db, logger) // Updated function call
-		case "/authenticate":
+		case "/webauthn/authenticate":
 			// Supply default POST arguments or query arguments
 			email := string(ctx.FormValue("email"))
 			password := string(ctx.FormValue("password"))

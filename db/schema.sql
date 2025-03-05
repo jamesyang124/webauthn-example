@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users
 ADD COLUMN IF NOT EXISTS webauthn_id BYTEA UNIQUE,
 ADD COLUMN IF NOT EXISTS webauthn_public_key BYTEA,
-ADD COLUMN IF NOT EXISTS webauthn_sign_count INTEGER;
+ADD COLUMN IF NOT EXISTS webauthn_sign_count INTEGER,
+ADD COLUMN IF NOT EXISTS webauthn_displayname BYTEA UNIQUE;
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
