@@ -18,8 +18,12 @@ services:
       POSTGRES_USER: webauthn
       POSTGRES_PASSWORD: webauthnpassword
       POSTGRES_DB: webauthn_db
+    env_file:
+      - .env
     ports:
       - "5555:5432"
     user: 501:501
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - ./db_data/postgres:/var/lib/postgresql/data
+      - ./db_data/postgres:/db_data
+      - ./db:/db
