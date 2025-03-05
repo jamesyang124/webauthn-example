@@ -4,6 +4,8 @@ go 1.23.6
 
 require (
 	github.com/go-webauthn/webauthn v0.12.1
+	github.com/joho/godotenv v1.5.1
+	github.com/lib/pq v1.10.9
 	github.com/valyala/fasthttp v1.59.0
 )
 
