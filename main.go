@@ -54,7 +54,7 @@ func main() {
 	requestHandler := func(ctx *fasthttp.RequestCtx) {
 		switch string(ctx.Path()) {
 		case "/":
-			fmt.Fprintf(ctx, "Welcome to the high-performance API server!")
+			ctx.SendFile("static/index.html")
 		case "/auth/login":
 			fmt.Fprintf(ctx, "Welcome to the email/username basic auth login!")
 		case "/auth/register":

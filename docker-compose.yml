@@ -6,10 +6,16 @@ services:
     volumes:
       - .:/app
     command: go run main.go
+    develop:
+      watch:
+        - action: restart
+          path: .
+          target: /app
     ports:
       - "8080:8080"
     depends_on:
       - db
+      - redis
 
   db:
     image: postgres:13
@@ -27,3 +33,12 @@ services:
       - ./db_data/postgres:/var/lib/postgresql/data
       - ./db_data/postgres:/db_data
       - ./db:/db
+
+  redis:
+    image: redis:6
+    container_name: webauthn-redis
+    ports:
+      - "6379:6379"
+    user: 501:501
+    volumes:
+      - ./db_data/redis:/data

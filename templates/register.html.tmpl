@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>WebAuthn Registration</title>
+</head>
+<body>
+	<script>
+		const options = {
+			publicKey: {{.options}}
+		};
+		navigator.credentials.create(options).then((credential) => {
+			// Send the credential to the server for verification
+			fetch('/verify-registration', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(credential)
+			}).then(response => {
+				if (response.ok) {
+					alert('Registration successful!');
+				} else {
+					alert('Registration failed.');
+				}
+			});
+		}).catch((error) => {
+			console.error('Error during registration:', error);
+		});
+	</script>
+</body>
+</html>
