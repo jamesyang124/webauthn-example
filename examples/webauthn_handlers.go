@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"log"
+	"strings"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jamesyang124/webauthn-go/types" // Import the types package
@@ -21,8 +22,8 @@ func init() {
 	var err error
 	webAuthn, err = webauthn.New(&webauthn.Config{
 		RPDisplayName: "Example Corp",
-		RPID:          "example.com",
-		RPOrigins:     []string{"https://example.com"},
+		RPID:          "localhost",
+		RPOrigins:     []string{"http://localhost"},
 	})
 	if err != nil {
 		log.Fatalf("failed to create WebAuthn instance: %v", err)
@@ -32,6 +33,13 @@ func init() {
 	if err != nil {
 		log.Fatalf("failed to parse HTML template: %v", err)
 	}
+}
+
+func base64ToBase64URL(base64Str string) string {
+	base64URL := strings.ReplaceAll(base64Str, "+", "-")
+	base64URL = strings.ReplaceAll(base64URL, "/", "_")
+	base64URL = strings.TrimRight(base64URL, "=") // Remove padding
+	return base64URL
 }
 
 func HandleRegister(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {
@@ -78,9 +86,7 @@ func HandleRegister(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {
 	ctx.SetContentType("text/html")
 	ctx.SetStatusCode(fasthttp.StatusOK)
 
-	err = registerTmpl.Execute(ctx.Response.BodyWriter(), map[string]string{
-		"options": string(responseJSON),
-	})
+	err = registerTmpl.Execute(ctx.Response.BodyWriter(), template.JS(responseJSON))
 	if err != nil {
 		ctx.Error("Failed to execute HTML template", fasthttp.StatusInternalServerError)
 		logger.Printf("Error executing HTML template: %s", err)

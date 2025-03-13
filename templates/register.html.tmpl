@@ -5,10 +5,23 @@
 </head>
 <body>
 	<script>
-		const options = {
-			publicKey: {{.options}}
-		};
-		navigator.credentials.create(options).then((credential) => {
+		const options = {{.}};
+		console.log(options);
+		const challenge = options.publicKey.challenge.replace(/-/g, "+").replace(/_/g, "/");
+		const userId = options.publicKey.user.id;
+
+		try {
+			options.publicKey.challenge = Uint8Array.from(atob(challenge), c => c.charCodeAt(0));
+			options.publicKey.user.id = Uint8Array.from(atob(userId), c => c.charCodeAt(0));
+		} catch (e) {
+			console.error('Error decoding base64 string:', e);
+		}
+
+		navigator.credentials.create({
+			publicKey: options.publicKey
+		}).then((credential) => {
+			console.log(credential);
+
 			// Send the credential to the server for verification
 			fetch('/verify-registration', {
 				method: 'POST',
