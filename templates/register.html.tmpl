@@ -22,13 +22,19 @@
 		}).then((credential) => {
 			console.log(credential);
 
+			payload = {
+				"credential": credential,
+				"username": options.publicKey.user.name,
+				"displayname": options.publicKey.user.displayName
+			};
+
 			// Send the credential to the server for verification
 			fetch('/webauthn/register/verification', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify(credential)
+				body: JSON.stringify(payload)
 			}).then(response => {
 				if (response.ok) {
 					alert('Registration successful!');

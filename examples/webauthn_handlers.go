@@ -1,15 +1,21 @@
 package examples
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"html/template"
 	"log"
+	"time"
 
+	"net/http"
+
+	"github.com/go-redis/redis/v8"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jamesyang124/webauthn-go/types" // Import the types package
 	_ "github.com/lib/pq"
 	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
 var (
@@ -22,7 +28,7 @@ func init() {
 	webAuthn, err = webauthn.New(&webauthn.Config{
 		RPDisplayName: "Example Corp",
 		RPID:          "localhost",
-		RPOrigins:     []string{"http://localhost"},
+		RPOrigins:     []string{"http://localhost:8080"},
 	})
 	if err != nil {
 		log.Fatalf("failed to create WebAuthn instance: %v", err)
@@ -34,7 +40,7 @@ func init() {
 	}
 }
 
-func HandleWebAuthnOptions(db *sql.DB, logger *log.Logger) func(*fasthttp.RequestCtx) {
+func HandleWebAuthnOptions(db *sql.DB, logger *log.Logger, redisClient *redis.Client) func(*fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		username := string(ctx.FormValue("username"))
 
@@ -59,15 +65,27 @@ func HandleWebAuthnOptions(db *sql.DB, logger *log.Logger) func(*fasthttp.Reques
 		}
 
 		// TODO: _ is sessionData shold persist in later block
-		options, _, err := webAuthn.BeginRegistration(WebAuthnUser)
+		options, sessionData, err := webAuthn.BeginRegistration(WebAuthnUser)
 		if err != nil {
 			ctx.Error("Failed to begin WebAuthn registration", fasthttp.StatusInternalServerError)
 			logger.Printf("Error beginning WebAuthn registration: %s", err)
 			return
 		}
 
-		// Store sessionData in your session store (not shown here)
-		// ...
+		// Persist sessionData to Redis with TTL
+		sessionKey := "webauthn_session:" + username
+		sessionDataJson, err := json.Marshal(sessionData)
+		if err != nil {
+			ctx.Error("Failed to marshal sessionData", fasthttp.StatusInternalServerError)
+			logger.Printf("Error marshaling sessionData: %s", err)
+			return
+		}
+		err = redisClient.Set(context.Background(), sessionKey, string(sessionDataJson), 86400*time.Second).Err()
+		if err != nil {
+			ctx.Error("Failed to persist session data", fasthttp.StatusInternalServerError)
+			logger.Printf("Error persisting session data: %s", err)
+			return
+		}
 
 		responseJSON, err := json.Marshal(options)
 		if err != nil {
@@ -90,8 +108,110 @@ func HandleWebAuthnOptions(db *sql.DB, logger *log.Logger) func(*fasthttp.Reques
 	}
 }
 
-func HandleVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {
+func HandleVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger, redisClient *redis.Client) {
+	var requestData map[string]interface{}
+	if err := json.Unmarshal(ctx.PostBody(), &requestData); err != nil {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Invalid JSON"}`)
+		return
+	}
 
+	username, ok := requestData["username"].(string)
+	if !ok {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Invalid username type"}`)
+		return
+	}
+
+	var userID, webauthnID, createDate string
+
+	err := db.QueryRow("SELECT id, username, COALESCE(webauthn_id, ''), created_at FROM users WHERE username=$1", username).Scan(&userID, &username, &webauthnID, &createDate)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			ctx.Error("WebAuthnUser not found or invalid password", fasthttp.StatusUnauthorized)
+		} else {
+			ctx.Error("Database query error", fasthttp.StatusInternalServerError)
+		}
+		logger.Printf("Error in HandleAuthenticate: %s", err)
+		return
+	}
+
+	WebAuthnUser := &types.WebAuthnUser{ // Use the imported WebAuthnUser type
+		ID:          webauthnID,
+		Name:        username,
+		DisplayName: username,
+		Credentials: []webauthn.Credential{},
+	}
+	logger.Println(WebAuthnUser)
+
+	sessionKey := "webauthn_session:" + username
+	var sessionData webauthn.SessionData
+	sessionDataStr, err := redisClient.Get(context.Background(), sessionKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			ctx.SetStatusCode(fasthttp.StatusBadRequest)
+			ctx.SetBodyString(`{"error": "Session data not found"}`)
+		} else {
+			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+			ctx.SetBodyString(`{"error": "Failed to retrieve session data"}`)
+			logger.Printf("Error retrieving session data: %s", err)
+		}
+		return
+	}
+
+	err = json.Unmarshal([]byte(sessionDataStr), &sessionData)
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to parse session data"}`)
+		logger.Printf("Error parsing session data: %s", err)
+		return
+	}
+
+	// Extract "credential" from requestData as []byte
+	credentialData, err := json.Marshal(requestData["credential"])
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Invalid credential data"}`)
+		logger.Printf("Error marshaling credential data: %s", err)
+		return
+	}
+
+	// Override ctx.PostBody with the extracted credential data
+	ctx.Request.SetBody(credentialData)
+	// Now ctx.PostBody() will return the new body
+	logger.Printf("Overridden PostBody: %s", string(ctx.PostBody()))
+
+	var httpRequest http.Request
+	fasthttpadaptor.ConvertRequest(ctx, &httpRequest, true)
+
+	// Use sessionData in WebAuthn verification
+	credential, err := webAuthn.FinishRegistration(WebAuthnUser, sessionData, &httpRequest)
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Verification failed"}`)
+		logger.Printf("Error finishing WebAuthn registration: %s", err)
+		return
+	}
+
+	// TODO: persist user data back to db =>
+	// "id": "ZglWcy8uzw/1j/XwghAUPw==",
+	// "publicKey": "....YSRuSE3pXohqJibehI="
+	// webauthn_displayname
+	// {"authenticatorAttachment":"platform","clientExtensionResults":{},"id":"ZglWcy8uzw_1j_XwghAUPw","rawId":"ZglWcy8uzw_1j_XwghAUPw","response":{"attestationObject":"o2Nmt6Eg","authenticatorData":"SZYN5YgiGomJt6Eg","clientDataJSON":"eyJ0ezZX0","publicKey":"MFkwEwYHKoZIz5ITeleiGomJt6Eg","publicKeyAlgorithm":-7,"transports":["hybrid","internal"]},"type":"public-key"}
+	// authenticatorData
+
+	// Respond with JSON
+	responseData := map[string]interface{}{
+		"credential": credential,
+		"payload":    requestData,
+		"message":    "Verification successful",
+		"path":       string(ctx.Path()),
+	}
+	responseJSON, _ := json.Marshal(responseData)
+
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.SetBody(responseJSON)
 }
 
 func HandleAuthenticate(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {

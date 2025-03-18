@@ -1,16 +1,16 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 
 	"github.com/fasthttp/router"
 	"github.com/jamesyang124/webauthn-go/examples"
+	"github.com/jamesyang124/webauthn-go/types"
 	"github.com/valyala/fasthttp"
 )
 
-func authRegister(db *sql.DB, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func authRegister() func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		fmt.Fprintf(ctx, "Welcome to the email/username basic auth registration!")
 	}
@@ -20,32 +20,31 @@ func rootPage(ctx *fasthttp.RequestCtx) {
 	ctx.SendFile("static/index.html")
 }
 
-func authLogin(db *sql.DB, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func authLogin(persistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		examples.HandleAuthLogin(db, logger)(ctx)
+		examples.HandleAuthLogin(persistance.Db, logger)(ctx)
 	}
 }
 
-func webAuthnOptions(db *sql.DB, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waOptions(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		username := string(ctx.FormValue("username"))
 		if username == "" {
 			username = "user1"
 		}
 		ctx.QueryArgs().Add("username", username)
-		examples.HandleWebAuthnOptions(db, logger)(ctx)
+		examples.HandleWebAuthnOptions(presistance.Db, logger, presistance.Cache)(ctx)
 	}
 }
 
-func webAuthnVerification(db *sql.DB, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waVerification(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		ctx.SetContentType("text/html")
-		ctx.SetStatusCode(fasthttp.StatusOK)
-		ctx.SetBodyString(string(ctx.Path()))
+		// Parse JSON input
+		examples.HandleVerification(ctx, presistance.Db, logger, presistance.Cache)
 	}
 }
 
-func webAuthnAuthenticate(db *sql.DB, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waAuthenticate(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		email := string(ctx.FormValue("email"))
 		password := string(ctx.FormValue("password"))
@@ -58,24 +57,24 @@ func webAuthnAuthenticate(db *sql.DB, logger *log.Logger) func(ctx *fasthttp.Req
 		ctx.QueryArgs().Add("email", email)
 		ctx.QueryArgs().Add("password", password)
 
-		examples.HandleAuthenticate(ctx, db, logger)
+		examples.HandleAuthenticate(ctx, presistance.Db, logger)
 	}
 }
 
-func PrepareRoutes(db *sql.DB, logger *log.Logger) *router.Router {
+func PrepareRoutes(persistance *types.Persistance, logger *log.Logger) *router.Router {
 
 	routes := router.New()
 
 	routes.GET("/*", rootPage)
-	routes.GET("/auth/login", authLogin(db, logger))
-	routes.GET("/auth/register", authRegister(db, logger))
+	routes.GET("/auth/login", authLogin(persistance, logger))
+	routes.GET("/auth/register", authRegister())
 
 	waRegister := routes.Group("/webauthn/register")
-	waRegister.GET("/options", webAuthnOptions(db, logger))
-	waRegister.POST("/verification", webAuthnVerification(db, logger))
+	waRegister.GET("/options", waOptions(persistance, logger))
+	waRegister.POST("/verification", waVerification(persistance, logger))
 
 	waAuth := routes.Group("/webauthn/authenticate")
-	waAuth.GET("/", webAuthnAuthenticate(db, logger))
+	waAuth.GET("/", waAuthenticate(persistance, logger))
 
 	return routes
 }

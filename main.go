@@ -6,6 +6,10 @@ import (
 	"os"
 
 	// Import without alias
+	"context"
+
+	"github.com/go-redis/redis/v8" // Import Redis package
+	"github.com/jamesyang124/webauthn-go/types"
 	"github.com/joho/godotenv" // Import godotenv package
 	_ "github.com/lib/pq"      // Import PostgreSQL driver
 	"github.com/valyala/fasthttp"
@@ -31,8 +35,27 @@ func main() {
 	}
 	defer db.Close()
 
-	// Ensure PrepareRoutes is defined in the same package (main)
-	routes := PrepareRoutes(db, logger)
+	// Initialize Redis client
+	redisAddr := os.Getenv("REDIS_URL")
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: redisAddr,
+	})
+	defer redisClient.Close()
+
+	// Test Redis connection
+	ctx := context.Background()
+	_, err = redisClient.Ping(ctx).Result()
+	if err != nil {
+		logger.Printf("Failed to connect to Redis: %s", err)
+		return
+	}
+
+	presistance := new(types.Persistance)
+	presistance.Db = db
+	presistance.Cache = redisClient
+
+	// Pass presistance to PrepareRoutes
+	routes := PrepareRoutes(presistance, logger)
 
 	// Start the server
 	logger.Println("Starting server on :8080")
