@@ -5,7 +5,7 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-    command: go run main.go
+    command: go run .
     develop:
       watch:
         - action: restart

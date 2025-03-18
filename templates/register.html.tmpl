@@ -23,7 +23,7 @@
 			console.log(credential);
 
 			// Send the credential to the server for verification
-			fetch('/verify-registration', {
+			fetch('/webauthn/register/verification', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
