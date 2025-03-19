@@ -1,2 +1,2 @@
 # webauthn-go
-webauthn-go demo with copilot
+webauthn-go demo and development with copilot

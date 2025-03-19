@@ -16,3 +16,8 @@ ADD COLUMN IF NOT EXISTS webauthn_displayname BYTEA UNIQUE;
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 CREATE INDEX IF NOT EXISTS idx_users_webauthn_id ON users(webauthn_id);
+
+ALTER TABLE users
+ALTER COLUMN webauthn_id TYPE VARCHAR(255),
+ALTER COLUMN webauthn_public_key TYPE VARCHAR(255),
+ALTER COLUMN webauthn_displayname TYPE VARCHAR(100);

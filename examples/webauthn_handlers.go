@@ -10,6 +10,8 @@ import (
 
 	"net/http"
 
+	"encoding/base64"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jamesyang124/webauthn-go/types" // Import the types package
@@ -123,26 +125,12 @@ func HandleVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger
 		return
 	}
 
-	var userID, webauthnID, createDate string
-
-	err := db.QueryRow("SELECT id, username, COALESCE(webauthn_id, ''), created_at FROM users WHERE username=$1", username).Scan(&userID, &username, &webauthnID, &createDate)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			ctx.Error("WebAuthnUser not found or invalid password", fasthttp.StatusUnauthorized)
-		} else {
-			ctx.Error("Database query error", fasthttp.StatusInternalServerError)
-		}
-		logger.Printf("Error in HandleAuthenticate: %s", err)
+	displayname, ok := requestData["displayname"].(string)
+	if !ok {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Invalid displayname type"}`)
 		return
 	}
-
-	WebAuthnUser := &types.WebAuthnUser{ // Use the imported WebAuthnUser type
-		ID:          webauthnID,
-		Name:        username,
-		DisplayName: username,
-		Credentials: []webauthn.Credential{},
-	}
-	logger.Println(WebAuthnUser)
 
 	sessionKey := "webauthn_session:" + username
 	var sessionData webauthn.SessionData
@@ -176,6 +164,15 @@ func HandleVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger
 		return
 	}
 
+	// Extract webauthnID from credentialData
+	var credentialMap map[string]interface{}
+	if err := json.Unmarshal(credentialData, &credentialMap); err != nil {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Invalid credential data structure"}`)
+		logger.Printf("Error unmarshaling credential data: %s", err)
+		return
+	}
+
 	// Override ctx.PostBody with the extracted credential data
 	ctx.Request.SetBody(credentialData)
 	// Now ctx.PostBody() will return the new body
@@ -183,6 +180,26 @@ func HandleVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger
 
 	var httpRequest http.Request
 	fasthttpadaptor.ConvertRequest(ctx, &httpRequest, true)
+
+	var userID, createDate string
+
+	err = db.QueryRow("SELECT id, username, created_at FROM users WHERE username=$1", username).Scan(&userID, &username, &createDate)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			ctx.Error("WebAuthnUser not found or invalid password", fasthttp.StatusUnauthorized)
+		} else {
+			ctx.Error("Database query error", fasthttp.StatusInternalServerError)
+		}
+		logger.Printf("Error in HandleAuthenticate: %s", err)
+		return
+	}
+
+	WebAuthnUser := &types.WebAuthnUser{ // Use the imported WebAuthnUser type
+		ID:          string(sessionData.UserID),
+		Name:        username,
+		DisplayName: displayname,
+		Credentials: []webauthn.Credential{},
+	}
 
 	// Use sessionData in WebAuthn verification
 	credential, err := webAuthn.FinishRegistration(WebAuthnUser, sessionData, &httpRequest)
@@ -192,13 +209,40 @@ func HandleVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger
 		logger.Printf("Error finishing WebAuthn registration: %s", err)
 		return
 	}
+	logger.Println(WebAuthnUser)
 
-	// TODO: persist user data back to db =>
-	// "id": "ZglWcy8uzw/1j/XwghAUPw==",
-	// "publicKey": "....YSRuSE3pXohqJibehI="
-	// webauthn_displayname
-	// {"authenticatorAttachment":"platform","clientExtensionResults":{},"id":"ZglWcy8uzw_1j_XwghAUPw","rawId":"ZglWcy8uzw_1j_XwghAUPw","response":{"attestationObject":"o2Nmt6Eg","authenticatorData":"SZYN5YgiGomJt6Eg","clientDataJSON":"eyJ0ezZX0","publicKey":"MFkwEwYHKoZIz5ITeleiGomJt6Eg","publicKeyAlgorithm":-7,"transports":["hybrid","internal"]},"type":"public-key"}
-	// authenticatorData
+	// Encode credential.PublicKey using standard Base64
+	credentialPublicKeyEncoded := base64.StdEncoding.EncodeToString(credential.PublicKey)
+	logger.Println(credentialPublicKeyEncoded)
+
+	credentialIdEncoded := base64.StdEncoding.EncodeToString(credential.ID)
+	logger.Println(credentialIdEncoded)
+
+	// Persist credential data to the database
+	result, err := db.Exec(
+		`UPDATE users SET webauthn_id = $1, webauthn_sign_count = $2, webauthn_public_key = $3, webauthn_displayname = $4 WHERE username = $5`,
+		credentialIdEncoded,
+		credential.Authenticator.SignCount,
+		credentialPublicKeyEncoded, // Use the decoded public key
+		displayname,
+		username,
+	)
+
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to persist credential data"}`)
+		logger.Printf("Error persisting credential data: %s", err)
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to persist credential data"}`)
+		logger.Printf("Error persisting credential data: %s", err)
+		return
+	}
+	logger.Printf("rows affected: %d", rowsAffected)
 
 	// Respond with JSON
 	responseData := map[string]interface{}{
