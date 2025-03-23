@@ -1,25 +1,25 @@
 document.getElementById('register').addEventListener('click', async () => {
     try {
-        const response = await fetch('/webauthn/register', { method: 'POST' });
-        const options = await response.json();
-        const credential = await navigator.credentials.create({ publicKey: options });
-        const credentialResponse = {
-            id: credential.id,
-            rawId: arrayBufferToBase64(credential.rawId),
-            type: credential.type,
-            response: {
-                attestationObject: arrayBufferToBase64(credential.response.attestationObject),
-                clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
-            },
-        };
-        await fetch('/webauthn/register', {
-            method: 'POST',
+        const username = document.getElementById('username').value;
+        if (!username) {
+            alert('Please enter a username.');
+            return;
+        }
+        console.log('Registration options ajax request in:');
+        const response = await fetch('/webauthn/register/options', {
+            method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(credentialResponse),
+            body: JSON.stringify({ "username": username }), 
         });
-        alert('Registration successful');
+        if (!response.ok) {
+            throw new Error(`Registration failed: ${response.statusText}`);
+        }
+        const responseData = await response.json();
+        console.log('Registration response:', responseData);
+        await handleWebAuthnRegistration(responseData);
     } catch (error) {
         console.error('Error during registration:', error);
+        alert('An error occurred during registration. Please try again.');
     }
 });
 
@@ -49,6 +49,45 @@ document.getElementById('authenticate').addEventListener('click', async () => {
         console.error('Error during authentication:', error);
     }
 });
+
+async function handleWebAuthnRegistration(options) {
+    console.log(options);
+    const challenge = options.publicKey.challenge.replace(/-/g, "+").replace(/_/g, "/");
+    const userId = options.publicKey.user.id;
+
+    try {
+        options.publicKey.challenge = Uint8Array.from(atob(challenge), c => c.charCodeAt(0));
+        options.publicKey.user.id = Uint8Array.from(atob(userId), c => c.charCodeAt(0));
+    } catch (e) {
+        console.error('Error decoding base64 string:', e);
+        return;
+    }
+
+    try {
+        const credential = await navigator.credentials.create({ publicKey: options.publicKey });
+        console.log(credential);
+
+        const payload = {
+            "credential": credential,
+            "username": options.publicKey.user.name,
+            "displayname": options.publicKey.user.displayName
+        };
+
+        const response = await fetch('/webauthn/register/verification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            alert('Registration successful!');
+        } else {
+            alert('Registration failed.');
+        }
+    } catch (error) {
+        console.error('Error during registration:', error);
+    }
+}
 
 function arrayBufferToBase64(buffer) {
     return btoa(String.fromCharCode(...new Uint8Array(buffer)));

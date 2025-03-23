@@ -44,7 +44,21 @@ func init() {
 
 func HandleRegisterOptions(db *sql.DB, logger *log.Logger, redisClient *redis.Client) func(*fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		username := string(ctx.FormValue("username"))
+		var requestData map[string]interface{}
+		if err := json.Unmarshal(ctx.PostBody(), &requestData); err != nil {
+			ctx.SetStatusCode(fasthttp.StatusBadRequest)
+			ctx.SetBodyString(`{"error": "Invalid JSON"}`)
+			logger.Printf("Error unmarshaling JSON payload: %s", err)
+			return
+		}
+
+		username, ok := requestData["username"].(string)
+		if !ok || username == "" {
+			ctx.SetStatusCode(fasthttp.StatusBadRequest)
+			ctx.SetBodyString(`{"error": "Username is required and must be a string"}`)
+			logger.Println("Invalid or missing username in JSON payload")
+			return
+		}
 
 		var userID, webauthnID, createDate string
 
@@ -96,15 +110,9 @@ func HandleRegisterOptions(db *sql.DB, logger *log.Logger, redisClient *redis.Cl
 			return
 		}
 
-		ctx.SetContentType("text/html")
+		ctx.SetContentType("application/json")
 		ctx.SetStatusCode(fasthttp.StatusOK)
-
-		err = registerTmpl.Execute(ctx.Response.BodyWriter(), template.JS(responseJSON))
-		if err != nil {
-			ctx.Error("Failed to execute HTML template", fasthttp.StatusInternalServerError)
-			logger.Printf("Error executing HTML template: %s", err)
-			return
-		}
+		ctx.SetBody(responseJSON)
 
 		logger.Println("HandleRegister called")
 	}
@@ -258,21 +266,73 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *lo
 	ctx.SetBody(responseJSON)
 }
 
-func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {
-	//username := string(ctx.FormValue("username"))
+func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger, redisClient *redis.Client) {
+	username := string(ctx.FormValue("username"))
+	if username == "" {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Username is required"}`)
+		return
+	}
 
-	responseJSON, err := json.Marshal("")
+	var userID, webauthnID, displayName string
+	err := db.QueryRow("SELECT id, webauthn_id, webauthn_displayname FROM users WHERE username=$1", username).Scan(&userID, &webauthnID, &displayName)
 	if err != nil {
-		ctx.Error("Failed to marshal response", fasthttp.StatusInternalServerError)
+		if err == sql.ErrNoRows {
+			ctx.SetStatusCode(fasthttp.StatusNotFound)
+			ctx.SetBodyString(`{"error": "User not found"}`)
+		} else {
+			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+			ctx.SetBodyString(`{"error": "Database query error"}`)
+		}
+		logger.Printf("Error querying user: %s", err)
+		return
+	}
+
+	WebAuthnUser := &types.WebAuthnUser{
+		ID:          webauthnID,
+		Name:        username,
+		DisplayName: displayName,
+		Credentials: []webauthn.Credential{},
+	}
+
+	options, sessionData, err := webAuthn.BeginLogin(WebAuthnUser)
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to begin WebAuthn login"}`)
+		logger.Printf("Error beginning WebAuthn login: %s", err)
+		return
+	}
+
+	// Persist sessionData to Redis with TTL
+	sessionKey := "webauthn_login_session:" + username
+	sessionDataJson, err := json.Marshal(sessionData)
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to marshal session data"}`)
+		logger.Printf("Error marshaling session data: %s", err)
+		return
+	}
+	err = redisClient.Set(context.Background(), sessionKey, string(sessionDataJson), 86400*time.Second).Err()
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to persist session data"}`)
+		logger.Printf("Error persisting session data: %s", err)
+		return
+	}
+
+	responseJSON, err := json.Marshal(options)
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to marshal response"}`)
 		logger.Printf("Error marshaling response: %s", err)
 		return
 	}
 
 	ctx.SetContentType("application/json")
 	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetBodyString(string(responseJSON))
+	ctx.SetBody(responseJSON)
 
-	logger.Println("HandleAuthenticate called")
+	logger.Println("HandleBeginLogin called")
 }
 
 func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {

@@ -17,7 +17,7 @@ func authRegister() func(ctx *fasthttp.RequestCtx) {
 }
 
 func rootPage(ctx *fasthttp.RequestCtx) {
-	ctx.SendFile("static/index.html")
+	ctx.SendFile("./static/index.html")
 }
 
 func authLogin(persistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
@@ -28,11 +28,6 @@ func authLogin(persistance *types.Persistance, logger *log.Logger) func(ctx *fas
 
 func waRegisterOptions(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		username := string(ctx.FormValue("username"))
-		if username == "" {
-			username = "user1"
-		}
-		ctx.QueryArgs().Add("username", username)
 		examples.HandleRegisterOptions(presistance.Db, logger, presistance.Cache)(ctx)
 	}
 }
@@ -46,18 +41,7 @@ func waRegisterVerification(presistance *types.Persistance, logger *log.Logger) 
 
 func waAuthenticateOptions(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		email := string(ctx.FormValue("email"))
-		password := string(ctx.FormValue("password"))
-		if email == "" {
-			email = "user1@example.com"
-		}
-		if password == "" {
-			password = "password1"
-		}
-		ctx.QueryArgs().Add("email", email)
-		ctx.QueryArgs().Add("password", password)
-
-		examples.HandleAuthenticateOptions(ctx, presistance.Db, logger)
+		examples.HandleAuthenticateOptions(ctx, presistance.Db, logger, presistance.Cache)
 	}
 }
 
@@ -82,12 +66,14 @@ func PrepareRoutes(persistance *types.Persistance, logger *log.Logger) *router.R
 
 	routes := router.New()
 
-	routes.GET("/*", rootPage)
+	routes.GET("/", rootPage)
 	routes.GET("/auth/login", authLogin(persistance, logger))
 	routes.GET("/auth/register", authRegister())
 
+	routes.ServeFiles("/assets/{filepath:*}", "./static")
+
 	waRegister := routes.Group("/webauthn/register")
-	waRegister.GET("/options", waRegisterOptions(persistance, logger))
+	waRegister.POST("/options", waRegisterOptions(persistance, logger))
 	waRegister.POST("/verification", waRegisterVerification(persistance, logger))
 
 	waAuth := routes.Group("/webauthn/authenticate")
