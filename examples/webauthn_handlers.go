@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"                    // Add this import for generating random text
 	"github.com/jamesyang124/webauthn-go/types" // Import the types package
 	_ "github.com/lib/pq"
 	"github.com/valyala/fasthttp"
@@ -30,19 +31,21 @@ func init() {
 	webAuthn, err = webauthn.New(&webauthn.Config{
 		RPDisplayName: "Example Corp",
 		RPID:          "localhost",
-		RPOrigins:     []string{"http://localhost:8080"},
+		// RPOrigins should be FE server host
+		RPOrigins: []string{"http://localhost:5173"},
+		//		RPOrigins: []string{"http://localhost:8080"},
 	})
 	if err != nil {
 		log.Fatalf("failed to create WebAuthn instance: %v", err)
 	}
 }
 
-func HandleRegisterOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db *sql.DB, redisClient *redis.Client) {
+func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	var requestData map[string]interface{}
 	if err := json.Unmarshal(ctx.PostBody(), &requestData); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Invalid JSON"}`)
-		logger.Printf("Error unmarshaling JSON payload: %s", err)
+		ctx.Logger().Printf("Error unmarshaling JSON payload: %s", err)
 		return
 	}
 
@@ -50,25 +53,31 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db *sql
 	if !ok || username == "" {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Username is required and must be a string"}`)
-		logger.Println("Invalid or missing username in JSON payload")
+		ctx.Logger().Printf("Invalid or missing username in JSON payload")
 		return
 	}
 
-	var userID, webauthnID, createDate string
+	var userID, createDate string
 
-	err := db.QueryRow("SELECT id, username, COALESCE(webauthn_id, ''), created_at FROM users WHERE username=$1", username).Scan(&userID, &username, &webauthnID, &createDate)
+	err := db.QueryRow("SELECT id, username, created_at FROM users WHERE username=$1", username).Scan(&userID, &username, &createDate)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			ctx.Error("WebAuthnUser not found or invalid password", fasthttp.StatusUnauthorized)
 		} else {
 			ctx.Error("Database query error", fasthttp.StatusInternalServerError)
 		}
-		logger.Printf("Error in HandleAuthenticate: %s", err)
+		ctx.Logger().Printf("Error in HandleAuthenticate: %s", err)
 		return
 	}
 
+	// Generate random text for webauthnUserID if it is empty
+	webauthnUserID, err := uuid.NewV7()
+	if err != nil {
+		ctx.Logger().Printf("Error to generate webauthn user id uuidv7: %s", err)
+	}
+
 	WebAuthnUser := &types.WebAuthnUser{ // Use the imported WebAuthnUser type
-		ID:          webauthnID,
+		ID:          webauthnUserID.String(),
 		Name:        username,
 		DisplayName: username,
 		Credentials: []webauthn.Credential{},
@@ -78,7 +87,7 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db *sql
 	options, sessionData, err := webAuthn.BeginRegistration(WebAuthnUser)
 	if err != nil {
 		ctx.Error("Failed to begin WebAuthn registration", fasthttp.StatusInternalServerError)
-		logger.Printf("Error beginning WebAuthn registration: %s", err)
+		ctx.Logger().Printf("Error beginning WebAuthn registration: %s", err)
 		return
 	}
 
@@ -87,20 +96,22 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db *sql
 	sessionDataJson, err := json.Marshal(sessionData)
 	if err != nil {
 		ctx.Error("Failed to marshal sessionData", fasthttp.StatusInternalServerError)
-		logger.Printf("Error marshaling sessionData: %s", err)
+		ctx.Logger().Printf("Error marshaling sessionData: %s", err)
 		return
 	}
+	ctx.Logger().Printf("register options sessionData: %s", sessionDataJson)
+
 	err = redisClient.Set(context.Background(), sessionKey, string(sessionDataJson), 86400*time.Second).Err()
 	if err != nil {
 		ctx.Error("Failed to persist session data", fasthttp.StatusInternalServerError)
-		logger.Printf("Error persisting session data: %s", err)
+		ctx.Logger().Printf("Error persisting session data: %s", err)
 		return
 	}
 
 	responseJSON, err := json.Marshal(options)
 	if err != nil {
 		ctx.Error("Failed to marshal response", fasthttp.StatusInternalServerError)
-		logger.Printf("Error marshaling response: %s", err)
+		ctx.Logger().Printf("Error marshaling response: %s", err)
 		return
 	}
 
@@ -108,14 +119,15 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db *sql
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetBody(responseJSON)
 
-	logger.Println("HandleRegister called")
+	ctx.Logger().Printf("HandleRegister called")
 }
 
-func HandleRegisterVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db *sql.DB, redisClient *redis.Client) {
+func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	var requestData map[string]interface{}
 	if err := json.Unmarshal(ctx.PostBody(), &requestData); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Invalid JSON"}`)
+		ctx.Logger().Printf("Error unmarshaling JSON payload: %s", err)
 		return
 	}
 
@@ -143,7 +155,7 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db
 		} else {
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 			ctx.SetBodyString(`{"error": "Failed to retrieve session data"}`)
-			logger.Printf("Error retrieving session data: %s", err)
+			ctx.Logger().Printf("Error retrieving session data: %s", err)
 		}
 		return
 	}
@@ -152,32 +164,34 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to parse session data"}`)
-		logger.Printf("Error parsing session data: %s", err)
+		ctx.Logger().Printf("Error parsing session data: %s", err)
 		return
 	}
+
+	ctx.Logger().Printf("Register verify sessionDataStr: %s", sessionDataStr)
 
 	// Extract "credential" from requestData as []byte
 	credentialData, err := json.Marshal(requestData["credential"])
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Invalid credential data"}`)
-		logger.Printf("Error marshaling credential data: %s", err)
+		ctx.Logger().Printf("Error marshaling credential data: %s", err)
 		return
 	}
 
-	// Extract webauthnID from credentialData
+	// Extract webauthnUserID from credentialData
 	var credentialMap map[string]interface{}
 	if err := json.Unmarshal(credentialData, &credentialMap); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Invalid credential data structure"}`)
-		logger.Printf("Error unmarshaling credential data: %s", err)
+		ctx.Logger().Printf("Error unmarshaling credential data: %s", err)
 		return
 	}
 
 	// Override ctx.PostBody with the extracted credential data
 	ctx.Request.SetBody(credentialData)
 	// Now ctx.PostBody() will return the new body
-	logger.Printf("Overridden PostBody: %s", string(ctx.PostBody()))
+	ctx.Logger().Printf("Overridden PostBody: %s", string(ctx.PostBody()))
 
 	var httpRequest http.Request
 	fasthttpadaptor.ConvertRequest(ctx, &httpRequest, true)
@@ -191,12 +205,12 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db
 		} else {
 			ctx.Error("Database query error", fasthttp.StatusInternalServerError)
 		}
-		logger.Printf("Error in HandleAuthenticate: %s", err)
+		ctx.Logger().Printf("Error in HandleAuthenticate: %s", err)
 		return
 	}
 
 	WebAuthnUser := &types.WebAuthnUser{ // Use the imported WebAuthnUser type
-		ID:          string(sessionData.UserID),
+		ID:          string(sessionData.UserID), // Ensure this matches sessionData.UserID
 		Name:        username,
 		DisplayName: displayname,
 		Credentials: []webauthn.Credential{},
@@ -207,23 +221,26 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Verification failed"}`)
-		logger.Printf("Error finishing WebAuthn registration: %s", err)
+		ctx.Logger().Printf("Error finishing WebAuthn registration: %s", err)
 		return
 	}
-	logger.Println(WebAuthnUser)
+	// credential.Flags {"userPresent":true,"userVerified":false,"backupEligible":true,"backupState":true}
 
 	// Encode credential.PublicKey using standard Base64
-	credentialPublicKeyEncoded := base64.StdEncoding.EncodeToString(credential.PublicKey)
-	logger.Println(credentialPublicKeyEncoded)
+	credentialPublicKeyEncoded := base64.RawURLEncoding.EncodeToString(credential.PublicKey)
+	ctx.Logger().Printf(credentialPublicKeyEncoded)
 
-	credentialIdEncoded := base64.StdEncoding.EncodeToString(credential.ID)
-	logger.Println(credentialIdEncoded)
+	credentialIdEncoded := base64.RawURLEncoding.EncodeToString(credential.ID)
+	ctx.Logger().Printf(credentialIdEncoded)
+
+	// TOOD: may store credentials to another table
 
 	// Persist credential data to the database
 	result, err := db.Exec(
-		`UPDATE users SET webauthn_id = $1, webauthn_sign_count = $2, webauthn_public_key = $3, webauthn_displayname = $4 WHERE username = $5`,
-		credentialIdEncoded,
+		`UPDATE users SET webauthn_user_id = $1, webauthn_sign_count = $2, webauthn_credential_id = $3, webauthn_credential_public_key = $4, webauthn_displayname = $5 WHERE username = $6`,
+		WebAuthnUser.ID,
 		credential.Authenticator.SignCount,
+		credentialIdEncoded,
 		credentialPublicKeyEncoded, // Use the decoded public key
 		displayname,
 		username,
@@ -232,7 +249,7 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to persist credential data"}`)
-		logger.Printf("Error persisting credential data: %s", err)
+		ctx.Logger().Printf("Error persisting credential data: %s", err)
 		return
 	}
 
@@ -240,10 +257,10 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to persist credential data"}`)
-		logger.Printf("Error persisting credential data: %s", err)
+		ctx.Logger().Printf("Error persisting credential data: %s", err)
 		return
 	}
-	logger.Printf("rows affected: %d", rowsAffected)
+	ctx.Logger().Printf("rows affected: %d", rowsAffected)
 
 	// Respond with JSON
 	responseData := map[string]interface{}{
@@ -259,12 +276,12 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db
 	ctx.SetBody(responseJSON)
 }
 
-func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db *sql.DB, redisClient *redis.Client) {
+func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	var requestData map[string]interface{}
 	if err := json.Unmarshal(ctx.PostBody(), &requestData); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Invalid JSON"}`)
-		logger.Printf("Error unmarshaling JSON payload: %s", err)
+		ctx.Logger().Printf("Error unmarshaling JSON payload: %s", err)
 		return
 	}
 
@@ -272,12 +289,12 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db 
 	if !ok || username == "" {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Username is required and must be a string"}`)
-		logger.Println("Invalid or missing username in JSON payload")
+		ctx.Logger().Printf("Invalid or missing username in JSON payload")
 		return
 	}
 
-	var userID, webauthnID, displayName, credentialPublicKeyEncoded string
-	err := db.QueryRow("SELECT id, webauthn_id, webauthn_displayname, webauthn_public_key FROM users WHERE username=$1", username).Scan(&userID, &webauthnID, &displayName, &credentialPublicKeyEncoded)
+	var userID, webauthnUserID, displayName, credentialIdEncoded, credentialPublicKeyEncoded string
+	err := db.QueryRow("SELECT id, webauthn_user_id, webauthn_displayname, webauthn_credential_id, webauthn_credential_public_key FROM users WHERE username=$1", username).Scan(&userID, &webauthnUserID, &displayName, &credentialIdEncoded, &credentialPublicKeyEncoded)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			ctx.SetStatusCode(fasthttp.StatusNotFound)
@@ -286,29 +303,29 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db 
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 			ctx.SetBodyString(`{"error": "Database query error"}`)
 		}
-		logger.Printf("Error querying user: %s", err)
+		ctx.Logger().Printf("Error querying user: %s", err)
 		return
 	}
 
 	// Decode the credentialPublicKeyEncoded
-	credentialPublicKey, err := base64.StdEncoding.DecodeString(credentialPublicKeyEncoded)
+	credentialPublicKey, err := base64.RawURLEncoding.DecodeString(credentialPublicKeyEncoded)
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to decode public key"}`)
-		logger.Printf("Error decoding public key: %s", err)
+		ctx.Logger().Printf("Error decoding public key: %s", err)
 		return
 	}
 
-	credentialId, err := base64.StdEncoding.DecodeString(webauthnID)
+	credentialId, err := base64.RawURLEncoding.DecodeString(credentialIdEncoded)
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to decode webauthn id"}`)
-		logger.Printf("Error decoding webauthn id: %s", err)
+		ctx.SetBodyString(`{"error": "Failed to decode webauthn credential id"}`)
+		ctx.Logger().Printf("Error decoding webauthn credential id: %s", err)
 		return
 	}
 
 	WebAuthnUser := &types.WebAuthnUser{
-		ID:          webauthnID,
+		ID:          webauthnUserID,
 		Name:        username,
 		DisplayName: displayName,
 		Credentials: []webauthn.Credential{
@@ -323,7 +340,7 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db 
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to begin WebAuthn login"}`)
-		logger.Printf("Error beginning WebAuthn login: %s", err)
+		ctx.Logger().Printf("Error beginning WebAuthn login: %s", err)
 		return
 	}
 
@@ -333,14 +350,16 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db 
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to marshal session data"}`)
-		logger.Printf("Error marshaling session data: %s", err)
+		ctx.Logger().Printf("Error marshaling session data: %s", err)
 		return
 	}
+	ctx.Logger().Printf("auth options sessionData: %s", sessionDataJson)
+
 	err = redisClient.Set(context.Background(), sessionKey, string(sessionDataJson), 86400*time.Second).Err()
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to persist session data"}`)
-		logger.Printf("Error persisting session data: %s", err)
+		ctx.Logger().Printf("Error persisting session data: %s", err)
 		return
 	}
 
@@ -348,7 +367,7 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db 
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to marshal response"}`)
-		logger.Printf("Error marshaling response: %s", err)
+		ctx.Logger().Printf("Error marshaling response: %s", err)
 		return
 	}
 
@@ -356,15 +375,15 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, logger *log.Logger, db 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetBody(responseJSON)
 
-	logger.Println("HandleBeginLogin called")
+	ctx.Logger().Printf("HandleBeginLogin called")
 }
 
-func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, logger *log.Logger, db *sql.DB, redisClient *redis.Client) {
+func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	var requestData map[string]interface{}
 	if err := json.Unmarshal(ctx.PostBody(), &requestData); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Invalid JSON"}`)
-		logger.Printf("Error unmarshaling JSON payload: %s", err)
+		ctx.Logger().Printf("Error unmarshaling JSON payload: %s", err)
 		return
 	}
 
@@ -372,7 +391,7 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, logger *log.Logger
 	if !ok || username == "" {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Username is required and must be a string"}`)
-		logger.Println("Invalid or missing username in JSON payload")
+		ctx.Logger().Printf("Invalid or missing username in JSON payload")
 		return
 	}
 
@@ -386,7 +405,7 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, logger *log.Logger
 		} else {
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 			ctx.SetBodyString(`{"error": "Failed to retrieve session data"}`)
-			logger.Printf("Error retrieving session data: %s", err)
+			ctx.Logger().Printf("Error retrieving session data: %s", err)
 		}
 		return
 	}
@@ -395,15 +414,28 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, logger *log.Logger
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to parse session data"}`)
-		logger.Printf("Error parsing session data: %s", err)
+		ctx.Logger().Printf("Error parsing session data: %s", err)
 		return
 	}
+
+	credentialData, err := json.Marshal(requestData["credential"])
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Invalid credential data"}`)
+		ctx.Logger().Printf("Error marshaling credential data: %s", err)
+		return
+	}
+	ctx.Logger().Printf("parsing credentialData: %s", credentialData)
+
+	ctx.Request.SetBody(credentialData)
+	// Now ctx.PostBody() will return the new body
+	ctx.Logger().Printf("Overridden PostBody: %s", string(ctx.PostBody()))
 
 	var httpRequest http.Request
 	fasthttpadaptor.ConvertRequest(ctx, &httpRequest, true)
 
-	var userID, webauthnID, displayName, credentialPublicKeyEncoded string
-	err = db.QueryRow("SELECT id, webauthn_id, webauthn_displayname, webauthn_public_key FROM users WHERE username=$1", username).Scan(&userID, &webauthnID, &displayName, &credentialPublicKeyEncoded)
+	var userID, webauthnUserID, displayName, credentialIdEncoded, credentialPublicKeyEncoded string
+	err = db.QueryRow("SELECT id, webauthn_user_id, webauthn_displayname, webauthn_credential_id, webauthn_credential_public_key FROM users WHERE username=$1", username).Scan(&userID, &webauthnUserID, &displayName, &credentialIdEncoded, &credentialPublicKeyEncoded)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			ctx.SetStatusCode(fasthttp.StatusNotFound)
@@ -412,34 +444,39 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, logger *log.Logger
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 			ctx.SetBodyString(`{"error": "Database query error"}`)
 		}
-		logger.Printf("Error querying user: %s", err)
+		ctx.Logger().Printf("Error querying user: %s", err)
 		return
 	}
 
-	credentialId, err := base64.StdEncoding.DecodeString(webauthnID)
+	credentialId, err := base64.RawURLEncoding.DecodeString(credentialIdEncoded)
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to decode webauthn id"}`)
-		logger.Printf("Error decoding webauthn id: %s", err)
+		ctx.SetBodyString(`{"error": "Failed to decode webauthn credential id"}`)
+		ctx.Logger().Printf("Error decoding webauthn credential id: %s", err)
 		return
 	}
 
-	credentialPublicKey, err := base64.StdEncoding.DecodeString(credentialPublicKeyEncoded)
+	credentialPublicKey, err := base64.RawURLEncoding.DecodeString(credentialPublicKeyEncoded)
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to decode public key"}`)
-		logger.Printf("Error decoding public key: %s", err)
+		ctx.Logger().Printf("Error decoding public key: %s", err)
 		return
 	}
 
+	// should get values from db tables
 	WebAuthnUser := &types.WebAuthnUser{
-		ID:          webauthnID,
+		ID:          webauthnUserID,
 		Name:        username,
 		DisplayName: displayName,
 		Credentials: []webauthn.Credential{
 			{
 				ID:        credentialId,
 				PublicKey: credentialPublicKey,
+				Flags: webauthn.CredentialFlags{
+					// allow multi-device auth
+					BackupEligible: true,
+				},
 			},
 		},
 	}
@@ -448,7 +485,7 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, logger *log.Logger
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetBodyString(`{"error": "Login verification failed"}`)
-		logger.Printf("Error finishing WebAuthn login: %s", err)
+		ctx.Logger().Printf("Error finishing WebAuthn login: %s", err)
 		return
 	}
 
@@ -461,7 +498,7 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, logger *log.Logger
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to update sign count"}`)
-		logger.Printf("Error updating sign count: %s", err)
+		ctx.Logger().Printf("Error updating sign count: %s", err)
 		return
 	}
 
@@ -476,5 +513,5 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, logger *log.Logger
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetBody(responseJSON)
 
-	logger.Println("HandleAuthenticateVerification called successfully")
+	ctx.Logger().Printf("HandleAuthenticateVerification called successfully")
 }

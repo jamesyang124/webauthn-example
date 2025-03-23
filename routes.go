@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 
 	"github.com/fasthttp/router"
 	"github.com/jamesyang124/webauthn-go/examples"
+	"github.com/jamesyang124/webauthn-go/middlewares"
 	"github.com/jamesyang124/webauthn-go/types"
 	"github.com/valyala/fasthttp"
 )
@@ -17,68 +19,75 @@ func authRegister() func(ctx *fasthttp.RequestCtx) {
 }
 
 func rootPage(ctx *fasthttp.RequestCtx) {
-	ctx.SendFile("./static/index.html")
+	ctx.SetContentType("application/json; charset=utf-8")
+	timestamp := fmt.Sprintf("Version: %s", ctx.Time().Format("2006-01-02 15:04:05"))
+	response := map[string]string{
+		"message": "Welcome to WebAuthn Example",
+		"version": timestamp,
+	}
+	jsonResponse, _ := json.Marshal(response)
+	ctx.SetBody(jsonResponse)
 }
 
-func authLogin(persistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func authLogin(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		examples.HandleAuthLogin(persistance.Db, logger)(ctx)
+		examples.HandleAuthLogin(ctx, persistance.Db)
 	}
 }
 
-func waRegisterOptions(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waRegisterOptions(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		examples.HandleRegisterOptions(presistance.Db, logger, presistance.Cache)(ctx)
+		examples.HandleRegisterOptions(ctx, persistance.Db, persistance.Cache)
 	}
 }
 
-func waRegisterVerification(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waRegisterVerification(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		// Parse JSON input
-		examples.HandleRegisterVerification(ctx, presistance.Db, logger, presistance.Cache)
+		examples.HandleRegisterVerification(ctx, persistance.Db, persistance.Cache)
 	}
 }
 
-func waAuthenticateOptions(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waAuthenticateOptions(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		examples.HandleAuthenticateOptions(ctx, presistance.Db, logger, presistance.Cache)
+		examples.HandleAuthenticateOptions(ctx, persistance.Db, persistance.Cache)
 	}
 }
 
-func waAuthenticateVerification(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waAuthenticateVerification(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		email := string(ctx.FormValue("email"))
-		password := string(ctx.FormValue("password"))
-		if email == "" {
-			email = "user1@example.com"
-		}
-		if password == "" {
-			password = "password1"
-		}
-		ctx.QueryArgs().Add("email", email)
-		ctx.QueryArgs().Add("password", password)
-
-		examples.HandleAuthenticateVerification(ctx, presistance.Db, logger)
+		examples.HandleAuthenticateVerification(ctx, persistance.Db, persistance.Cache)
 	}
 }
 
-func PrepareRoutes(persistance *types.Persistance, logger *log.Logger) *router.Router {
+func notFoundHandler(ctx *fasthttp.RequestCtx) {
+	ctx.SetStatusCode(fasthttp.StatusNotFound)
+	ctx.SetContentType("application/json; charset=utf-8")
+	response := map[string]string{
+		"error":   "Not Found",
+		"message": "The requested resource could not be found.",
+	}
+	jsonResponse, _ := json.Marshal(response)
+	ctx.SetBody(jsonResponse)
+}
+
+func PrepareRoutes(logger *log.Logger, persistance *types.Persistance) fasthttp.RequestHandler {
 
 	routes := router.New()
 
-	routes.GET("/", rootPage)
-	routes.GET("/auth/login", authLogin(persistance, logger))
-	routes.GET("/auth/register", authRegister())
-
-	routes.ServeFiles("/assets/{filepath:*}", "./static")
+	routes.GET("/version", rootPage)
+	routes.POST("/auth/login", authLogin(persistance))
+	routes.POST("/auth/register", authRegister())
 
 	waRegister := routes.Group("/webauthn/register")
-	waRegister.POST("/options", waRegisterOptions(persistance, logger))
-	waRegister.POST("/verification", waRegisterVerification(persistance, logger))
+	waRegister.POST("/options", waRegisterOptions(persistance))
+	waRegister.POST("/verification", waRegisterVerification(persistance))
 
 	waAuth := routes.Group("/webauthn/authenticate")
-	waAuth.POST("/options", waAuthenticateOptions(persistance, logger))
-	waAuth.POST("/verification", waAuthenticateVerification(persistance, logger))
+	waAuth.POST("/options", waAuthenticateOptions(persistance))
+	waAuth.POST("/verification", waAuthenticateVerification(persistance))
 
-	return routes
+	routes.NotFound = notFoundHandler
+
+	return middlewares.CorsMiddleware(routes.Handler)
 }

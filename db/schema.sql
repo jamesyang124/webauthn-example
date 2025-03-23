@@ -8,16 +8,18 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 ALTER TABLE users
-ADD COLUMN IF NOT EXISTS webauthn_id BYTEA UNIQUE,
-ADD COLUMN IF NOT EXISTS webauthn_public_key BYTEA,
+ADD COLUMN IF NOT EXISTS webauthn_user_id BYTEA UNIQUE,
+ADD COLUMN IF NOT EXISTS webauthn_credential_id VARCHAR(255) UNIQUE,
+ADD COLUMN IF NOT EXISTS webauthn_credential_public_key VARCHAR(255),
 ADD COLUMN IF NOT EXISTS webauthn_sign_count INTEGER,
 ADD COLUMN IF NOT EXISTS webauthn_displayname BYTEA UNIQUE;
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
-CREATE INDEX IF NOT EXISTS idx_users_webauthn_id ON users(webauthn_id);
+DROP INDEX IF EXISTS idx_users_webauthn_id;
 
 ALTER TABLE users
-ALTER COLUMN webauthn_id TYPE VARCHAR(255),
-ALTER COLUMN webauthn_public_key TYPE VARCHAR(255),
-ALTER COLUMN webauthn_displayname TYPE VARCHAR(100);
+DROP COLUMN IF EXISTS webauthn_public_key,
+DROP COLUMN IF EXISTS webauthn_id,
+ALTER COLUMN webauthn_displayname TYPE VARCHAR(100),
+ALTER COLUMN webauthn_user_id TYPE VARCHAR(100);

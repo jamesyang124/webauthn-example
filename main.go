@@ -17,7 +17,7 @@ import (
 
 func main() {
 	// Initialize logger
-	logger := log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	logger := log.New(os.Stdout, "INFO: ", log.LstdFlags|log.Lmicroseconds|log.Lshortfile)
 
 	// Load environment variables from .env file
 	err := godotenv.Load()
@@ -55,11 +55,15 @@ func main() {
 	presistance.Cache = redisClient
 
 	// Pass presistance to PrepareRoutes
-	routes := PrepareRoutes(presistance, logger)
+	routesHandler := PrepareRoutes(logger, presistance)
 
 	// Start the server
 	logger.Println("Starting server on :8080")
-	if err := fasthttp.ListenAndServe(":8080", routes.Handler); err != nil {
+	fasthttpServer := &fasthttp.Server{
+		Logger:  logger,
+		Handler: routesHandler,
+	}
+	if err := fasthttpServer.ListenAndServe(":8080"); err != nil {
 		logger.Printf("Error in ListenAndServe: %s", err)
 	}
 }
