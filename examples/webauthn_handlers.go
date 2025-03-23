@@ -35,11 +35,6 @@ func init() {
 	if err != nil {
 		log.Fatalf("failed to create WebAuthn instance: %v", err)
 	}
-
-	registerTmpl, err = template.ParseFiles("templates/register.html.tmpl")
-	if err != nil {
-		log.Fatalf("failed to parse HTML template: %v", err)
-	}
 }
 
 func HandleRegisterOptions(db *sql.DB, logger *log.Logger, redisClient *redis.Client) func(*fasthttp.RequestCtx) {
@@ -267,15 +262,24 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *lo
 }
 
 func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger, redisClient *redis.Client) {
-	username := string(ctx.FormValue("username"))
-	if username == "" {
+	var requestData map[string]interface{}
+	if err := json.Unmarshal(ctx.PostBody(), &requestData); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		ctx.SetBodyString(`{"error": "Username is required"}`)
+		ctx.SetBodyString(`{"error": "Invalid JSON"}`)
+		logger.Printf("Error unmarshaling JSON payload: %s", err)
 		return
 	}
 
-	var userID, webauthnID, displayName string
-	err := db.QueryRow("SELECT id, webauthn_id, webauthn_displayname FROM users WHERE username=$1", username).Scan(&userID, &webauthnID, &displayName)
+	username, ok := requestData["username"].(string)
+	if !ok || username == "" {
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetBodyString(`{"error": "Username is required and must be a string"}`)
+		logger.Println("Invalid or missing username in JSON payload")
+		return
+	}
+
+	var userID, webauthnID, displayName, credentialPublicKeyEncoded string
+	err := db.QueryRow("SELECT id, webauthn_id, webauthn_displayname, webauthn_public_key FROM users WHERE username=$1", username).Scan(&userID, &webauthnID, &displayName, &credentialPublicKeyEncoded)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			ctx.SetStatusCode(fasthttp.StatusNotFound)
@@ -288,11 +292,33 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log
 		return
 	}
 
+	// Decode the credentialPublicKeyEncoded
+	credentialPublicKey, err := base64.StdEncoding.DecodeString(credentialPublicKeyEncoded)
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to decode public key"}`)
+		logger.Printf("Error decoding public key: %s", err)
+		return
+	}
+
+	credentialId, err := base64.StdEncoding.DecodeString(webauthnID)
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to decode webauthn id"}`)
+		logger.Printf("Error decoding webauthn id: %s", err)
+		return
+	}
+
 	WebAuthnUser := &types.WebAuthnUser{
 		ID:          webauthnID,
 		Name:        username,
 		DisplayName: displayName,
-		Credentials: []webauthn.Credential{},
+		Credentials: []webauthn.Credential{
+			{
+				ID:        credentialId,
+				PublicKey: credentialPublicKey,
+			},
+		},
 	}
 
 	options, sessionData, err := webAuthn.BeginLogin(WebAuthnUser)

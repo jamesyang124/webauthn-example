@@ -77,8 +77,8 @@ func PrepareRoutes(persistance *types.Persistance, logger *log.Logger) *router.R
 	waRegister.POST("/verification", waRegisterVerification(persistance, logger))
 
 	waAuth := routes.Group("/webauthn/authenticate")
-	waAuth.GET("/options", waAuthenticateOptions(persistance, logger))
-	waAuth.GET("/verification", waAuthenticateVerification(persistance, logger))
+	waAuth.POST("/options", waAuthenticateOptions(persistance, logger))
+	waAuth.POST("/verification", waAuthenticateVerification(persistance, logger))
 
 	return routes
 }

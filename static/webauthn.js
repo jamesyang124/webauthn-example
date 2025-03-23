@@ -25,7 +25,16 @@ document.getElementById('register').addEventListener('click', async () => {
 
 document.getElementById('authenticate').addEventListener('click', async () => {
     try {
-        const response = await fetch('/webauthn/authenticate', { method: 'POST' });
+        const username = document.getElementById('username').value;
+        if (!username) {
+            alert('Please enter a username.');
+            return;
+        }
+        const response = await fetch('/webauthn/authenticate/options', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ "username": username }),
+        });
         const options = await response.json();
         const assertion = await navigator.credentials.get({ publicKey: options });
         const assertionResponse = {
@@ -39,11 +48,7 @@ document.getElementById('authenticate').addEventListener('click', async () => {
                 userHandle: arrayBufferToBase64(assertion.response.userHandle),
             },
         };
-        await fetch('/webauthn/authenticate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(assertionResponse),
-        });
+        console.log('Assertion Response:', assertionResponse);
         alert('Authentication successful');
     } catch (error) {
         console.error('Error during authentication:', error);
