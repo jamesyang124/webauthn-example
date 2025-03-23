@@ -42,7 +42,7 @@ func init() {
 	}
 }
 
-func HandleWebAuthnOptions(db *sql.DB, logger *log.Logger, redisClient *redis.Client) func(*fasthttp.RequestCtx) {
+func HandleRegisterOptions(db *sql.DB, logger *log.Logger, redisClient *redis.Client) func(*fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		username := string(ctx.FormValue("username"))
 
@@ -110,7 +110,7 @@ func HandleWebAuthnOptions(db *sql.DB, logger *log.Logger, redisClient *redis.Cl
 	}
 }
 
-func HandleVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger, redisClient *redis.Client) {
+func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger, redisClient *redis.Client) {
 	var requestData map[string]interface{}
 	if err := json.Unmarshal(ctx.PostBody(), &requestData); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
@@ -258,7 +258,24 @@ func HandleVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger
 	ctx.SetBody(responseJSON)
 }
 
-func HandleAuthenticate(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {
+func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {
+	//username := string(ctx.FormValue("username"))
+
+	responseJSON, err := json.Marshal("")
+	if err != nil {
+		ctx.Error("Failed to marshal response", fasthttp.StatusInternalServerError)
+		logger.Printf("Error marshaling response: %s", err)
+		return
+	}
+
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.SetBodyString(string(responseJSON))
+
+	logger.Println("HandleAuthenticate called")
+}
+
+func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, logger *log.Logger) {
 	//username := string(ctx.FormValue("username"))
 
 	responseJSON, err := json.Marshal("")

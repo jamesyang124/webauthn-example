@@ -26,25 +26,25 @@ func authLogin(persistance *types.Persistance, logger *log.Logger) func(ctx *fas
 	}
 }
 
-func waOptions(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waRegisterOptions(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		username := string(ctx.FormValue("username"))
 		if username == "" {
 			username = "user1"
 		}
 		ctx.QueryArgs().Add("username", username)
-		examples.HandleWebAuthnOptions(presistance.Db, logger, presistance.Cache)(ctx)
+		examples.HandleRegisterOptions(presistance.Db, logger, presistance.Cache)(ctx)
 	}
 }
 
-func waVerification(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waRegisterVerification(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		// Parse JSON input
-		examples.HandleVerification(ctx, presistance.Db, logger, presistance.Cache)
+		examples.HandleRegisterVerification(ctx, presistance.Db, logger, presistance.Cache)
 	}
 }
 
-func waAuthenticate(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+func waAuthenticateOptions(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		email := string(ctx.FormValue("email"))
 		password := string(ctx.FormValue("password"))
@@ -57,7 +57,24 @@ func waAuthenticate(presistance *types.Persistance, logger *log.Logger) func(ctx
 		ctx.QueryArgs().Add("email", email)
 		ctx.QueryArgs().Add("password", password)
 
-		examples.HandleAuthenticate(ctx, presistance.Db, logger)
+		examples.HandleAuthenticateOptions(ctx, presistance.Db, logger)
+	}
+}
+
+func waAuthenticateVerification(presistance *types.Persistance, logger *log.Logger) func(ctx *fasthttp.RequestCtx) {
+	return func(ctx *fasthttp.RequestCtx) {
+		email := string(ctx.FormValue("email"))
+		password := string(ctx.FormValue("password"))
+		if email == "" {
+			email = "user1@example.com"
+		}
+		if password == "" {
+			password = "password1"
+		}
+		ctx.QueryArgs().Add("email", email)
+		ctx.QueryArgs().Add("password", password)
+
+		examples.HandleAuthenticateVerification(ctx, presistance.Db, logger)
 	}
 }
 
@@ -70,11 +87,12 @@ func PrepareRoutes(persistance *types.Persistance, logger *log.Logger) *router.R
 	routes.GET("/auth/register", authRegister())
 
 	waRegister := routes.Group("/webauthn/register")
-	waRegister.GET("/options", waOptions(persistance, logger))
-	waRegister.POST("/verification", waVerification(persistance, logger))
+	waRegister.GET("/options", waRegisterOptions(persistance, logger))
+	waRegister.POST("/verification", waRegisterVerification(persistance, logger))
 
 	waAuth := routes.Group("/webauthn/authenticate")
-	waAuth.GET("/", waAuthenticate(persistance, logger))
+	waAuth.GET("/options", waAuthenticateOptions(persistance, logger))
+	waAuth.GET("/verification", waAuthenticateVerification(persistance, logger))
 
 	return routes
 }
