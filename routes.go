@@ -6,9 +6,9 @@ import (
 	"log"
 
 	"github.com/fasthttp/router"
-	"github.com/jamesyang124/webauthn-go/examples"
-	"github.com/jamesyang124/webauthn-go/middlewares"
-	"github.com/jamesyang124/webauthn-go/types"
+	"github.com/jamesyang124/webauthn-example/examples"
+	"github.com/jamesyang124/webauthn-example/middlewares"
+	"github.com/jamesyang124/webauthn-example/types"
 	"github.com/valyala/fasthttp"
 )
 

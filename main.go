@@ -9,7 +9,7 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8" // Import Redis package
-	"github.com/jamesyang124/webauthn-go/types"
+	"github.com/jamesyang124/webauthn-example/types"
 	"github.com/joho/godotenv" // Import godotenv package
 	_ "github.com/lib/pq"      // Import PostgreSQL driver
 	"github.com/valyala/fasthttp"

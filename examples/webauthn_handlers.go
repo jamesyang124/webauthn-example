@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"                    // Add this import for generating random text
-	"github.com/jamesyang124/webauthn-go/types" // Import the types package
+	"github.com/google/uuid"                         // Add this import for generating random text
+	"github.com/jamesyang124/webauthn-example/types" // Import the types package
 	_ "github.com/lib/pq"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"

@@ -1,4 +1,4 @@
-module github.com/jamesyang124/webauthn-go
+module github.com/jamesyang124/webauthn-example
 
 go 1.23.6
 
