@@ -169,12 +169,12 @@ function App() {
         </a>
       </Box>
       <Typography variant="h4" gutterBottom>
-        Webauthn Example by Vite + React
+        Webauthn Example
       </Typography>
       <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, marginBottom: 2 }}>
         <Card sx={{ padding: 2, width: '300px' }}>
           <TextField
-            label="RegisterUsername"
+            label="username"
             variant="outlined"
             value={registerUsername}
             onChange={(e) => setRegisterUsername(e.target.value)}
@@ -190,7 +190,7 @@ function App() {
         </Card>
         <Card sx={{ padding: 2, width: '300px' }}>
           <TextField
-            label="AuthenticateUsername"
+            label="username"
             variant="outlined"
             value={authenticateUsername}
             onChange={(e) => setAuthenticateUsername(e.target.value)}

@@ -32,8 +32,8 @@ func init() {
 		RPDisplayName: "Example Corp",
 		RPID:          "localhost",
 		// RPOrigins should be FE server host
-		RPOrigins: []string{"http://localhost:5173"},
-		//		RPOrigins: []string{"http://localhost:8080"},
+		// RPOrigins: []string{"http://localhost:5173"},
+		RPOrigins: []string{"http://localhost:8080"},
 	})
 	if err != nil {
 		log.Fatalf("failed to create WebAuthn instance: %v", err)

@@ -1,5 +1,25 @@
 # webauthn-example
-webauthn-example and development with copilot
+webauthn-example with go, vite, react, and typescript. data backed by redis and postgres.
+
+for mvp:
+
+```sh
+cd views
+npm run build
+
+cd ..
+docker-compose up
+```
+
+for development:
+
+```sh
+cd views
+npm run build:watch
+
+cd ..
+docker-compose up
+```
 
 ## Reference
 - https://www.corbado.com/blog/webauthn-user-id-userhandle#webauthn-credential-id

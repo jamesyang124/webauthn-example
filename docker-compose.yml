@@ -11,6 +11,11 @@ services:
         - action: restart
           path: .
           target: /app
+          ignore:
+            - views/
+            - views/**/dist/*
+            - db_data/
+            - db/
     ports:
       - "8080:8080"
     depends_on:

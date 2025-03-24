@@ -19,6 +19,11 @@ func authRegister() func(ctx *fasthttp.RequestCtx) {
 }
 
 func rootPage(ctx *fasthttp.RequestCtx) {
+	ctx.SetContentType("text/html")
+	ctx.SendFile("./views/dist/index.html")
+}
+
+func versionHandler(ctx *fasthttp.RequestCtx) {
 	ctx.SetContentType("application/json; charset=utf-8")
 	timestamp := fmt.Sprintf("Version: %s", ctx.Time().Format("2006-01-02 15:04:05"))
 	response := map[string]string{
@@ -75,7 +80,11 @@ func PrepareRoutes(logger *log.Logger, persistance *types.Persistance) fasthttp.
 
 	routes := router.New()
 
-	routes.GET("/version", rootPage)
+	routes.GET("/", rootPage)
+	routes.ServeFiles("/{filepath:*}", "./views/dist")
+	routes.ServeFiles("/assets/{filepath:*}", "./views/dist/assets")
+
+	routes.GET("/version", versionHandler)
 	routes.POST("/auth/login", authLogin(persistance))
 	routes.POST("/auth/register", authRegister())
 
