@@ -1,6 +1,6 @@
-import webauthnLogo from '../../../public/shield.svg';
+import webauthnLogo from "../../assets/shield.svg"
 
-const AuthPageIcon = () => {
+const AuthPageLogo = () => {
   return (
     <div className="flex justify-center">
       <img
@@ -12,4 +12,4 @@ const AuthPageIcon = () => {
   );
 };
 
-export default AuthPageIcon;
+export default AuthPageLogo;
