@@ -12,8 +12,6 @@ services:
           path: .
           target: /app
           ignore:
-            - views/
-            - views/**/dist/*
             - db_data/
             - db/
     ports:

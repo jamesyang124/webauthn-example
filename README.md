@@ -21,6 +21,11 @@ cd ..
 docker-compose up
 ```
 
+## TODOs
+
+- UI and persist display name
+- persist credentials table for 1 to many relationship with user table.
+
 ## Reference
 - https://www.corbado.com/blog/webauthn-user-id-userhandle#webauthn-credential-id
 - https://www.corbado.com/blog/passkey-webauthn-database-guide
