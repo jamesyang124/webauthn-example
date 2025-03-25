@@ -6,8 +6,10 @@ for mvp:
 ```sh
 cd views
 npm run build
+echo "VITE_API_URL={HOST_URL}" > .env.production
 
 cd ..
+# docker-compose file supply env for prod
 docker-compose up
 ```
 
@@ -15,11 +17,32 @@ for development:
 
 ```sh
 cd views
+echo "VITE_API_URL=http://localhost:8080" > .env
 npm run build:watch
 
 cd ..
 docker-compose up
 ```
+
+development envs for containers:
+
+```sh
+PGPORT=5432
+PGPASSWORD=webauthnpassword
+PGHOST=localhost
+PGUSER=webauthn
+PGDATABASE=webauthn_db
+
+DATABASE_HOST=webauthn-db
+DATABASE_USER=webauthn
+DATABASE_PORT=5432
+DATABASE_PASS=webauthnpassword
+DATABASE_URL=postgres://${DATABASE_USER}:${DATABASE_PASS}@${DATABASE_HOST}:${DATABASE_PORT}/${PGDATABASE}?sslmode=disable
+
+REDIS_URL=webauthn-redis:6379
+```
+
+remove `user: 501:501` in docker-compose file if mount volume instead.
 
 ## TODOs
 
