@@ -1,3 +1,5 @@
 /// <reference types="vite/client" />
 
-declare const VITE_API_URL: string
+interface ImportMetaEnv {
+  readonly VITE_API_URL: string
+}

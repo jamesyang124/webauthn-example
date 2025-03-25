@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { LoginFormData } from '../../types/auth';
-import { AuthenticationResponseData } from '../../types/webauthn';
+import { AuthenticationResponseData } from 'webauthn';
 import { base64UrlToBase64Std, base64StdToArrayBuffers } from '../../utils';
 
 const handleWebAuthnLogin = async (responseData: AuthenticationResponseData, username: string) => {

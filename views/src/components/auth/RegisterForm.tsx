@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { RegisterFormData } from '../../types/auth';
+import { RegisterFormData } from 'auth';
 import { base64UrlToBase64Std, base64StdToArrayBuffers } from '../../utils';
 import {
   RegistrationResponseData,
   CredentialCreationOptions
-} from '../../types/webauthn';
+} from 'webauthn';
 
 const handleWebAuthnRegistration = async (responseData: RegistrationResponseData) => {
   console.log(responseData);
