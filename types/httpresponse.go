@@ -1,5 +1,4 @@
 // Package types defines shared types and response helpers for the WebAuthn example application.
-
 package types
 
 import (
@@ -7,8 +6,8 @@ import (
 	"go.uber.org/zap"
 )
 
-type HttpError struct {
-	Status  int    `json:"status"`
+type HTTPError struct {
+	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 

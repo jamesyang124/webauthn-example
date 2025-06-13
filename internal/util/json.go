@@ -1,9 +1,4 @@
-// Package util provides utility functions for JSON, base64, and WebAuthn operations.
-//
-// This package includes functions to parse and marshal JSON bodies,
-// respond with errors in a consistent format, and handle WebAuthn
-// specific data encoding and decoding.
-
+// Package util provides utility functions for JSON operations for the WebAuthn example.
 package util
 
 import (

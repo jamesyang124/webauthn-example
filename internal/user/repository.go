@@ -1,5 +1,4 @@
-// Package userrepo provides user-related database operations and validation logic for WebAuthn flows.
-
+// Package user provides user-related database operations and validation logic for WebAuthn flows.
 package user
 
 import (
@@ -54,10 +53,12 @@ func QueryUserWebauthnByUsername(
 	ctx *fasthttp.RequestCtx,
 	dbConn *sql.DB,
 	username string,
-	userID, webauthnUserID, displayName, credentialIdEncoded, credentialPublicKeyEncoded *string,
+	userID, webauthnUserID, displayName, credentialIDEncoded, credentialPublicKeyEncoded *string,
 ) error {
-	err := dbConn.QueryRow("SELECT id, webauthn_user_id, webauthn_displayname, webauthn_credential_id, webauthn_credential_public_key FROM users WHERE username=$1", username).
-		Scan(userID, webauthnUserID, displayName, credentialIdEncoded, credentialPublicKeyEncoded)
+	err := dbConn.QueryRow(
+		"SELECT id, webauthn_user_id, webauthn_displayname, webauthn_credential_id, webauthn_credential_public_key FROM users WHERE username=$1",
+		username,
+	).Scan(userID, webauthnUserID, displayName, credentialIDEncoded, credentialPublicKeyEncoded)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			ctx.SetStatusCode(fasthttp.StatusNotFound)
@@ -81,7 +82,15 @@ func UpdateUserWebauthnCredentials(
 	credentialIDEncoded, credentialPublicKeyEncoded, displayName, username string,
 ) (sql.Result, error) {
 	query := `UPDATE users SET webauthn_user_id = $1, webauthn_sign_count = $2, webauthn_credential_id = $3, webauthn_credential_public_key = $4, webauthn_displayname = $5 WHERE username = $6`
-	result, err := db.Exec(query, userID, signCount, credentialIDEncoded, credentialPublicKeyEncoded, displayName, username)
+	result, err := db.Exec(
+		query,
+		userID,
+		signCount,
+		credentialIDEncoded,
+		credentialPublicKeyEncoded,
+		displayName,
+		username,
+	)
 	if err != nil {
 		zap.L().Error("Error updating user webauthn credentials", zap.Error(err))
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)

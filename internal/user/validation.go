@@ -1,8 +1,4 @@
-// Package user provides user-related database operations and validation logic for WebAuthn flows.
-// It includes functionality to validate and extract user information such as username and display name
-// from incoming requests, ensuring the data's integrity and correctness before any database operations
-// are performed.
-
+// Package user provides user-related validation logic for WebAuthn flows.
 package user
 
 import (

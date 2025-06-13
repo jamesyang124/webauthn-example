@@ -1,9 +1,8 @@
-// Package handlers provides HTTP handlers for WebAuthn registration and authentication.
+// Package handlers provides HTTP handlers for WebAuthn authentication flows.
 // It manages WebAuthn options and verification for registration and login.
 // Uses PostgreSQL and Redis for persistence and session management.
 // This package includes handler functions for registration and login flows,
 // and utilities for session management and WebAuthn credential handling.
-
 package handlers
 
 import (
@@ -11,12 +10,13 @@ import (
 	"net/http"
 	"time"
 
+	_ "github.com/lib/pq" // Justify blank import: required for PostgreSQL driver registration
+
 	"github.com/go-redis/redis/v8"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/jamesyang124/webauthn-example/internal/session"
 	user "github.com/jamesyang124/webauthn-example/internal/user"
 	util "github.com/jamesyang124/webauthn-example/internal/util"
-	_ "github.com/lib/pq"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.uber.org/zap"
@@ -79,7 +79,7 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 
 	// Persist sessionData to Redis with TTL
 	sessionKey := "webauthn_login_session:" + username
-	sessionDataJson, err := util.MarshalAndRespondOnError(ctx, sessionData)
+	sessionDataJSON, err := util.MarshalAndRespondOnError(ctx, sessionData)
 	if err != nil {
 		return
 	}
@@ -87,7 +87,7 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 		ctx,
 		redisClient,
 		sessionKey,
-		sessionDataJson,
+		sessionDataJSON,
 		86400*time.Second,
 	) {
 		return

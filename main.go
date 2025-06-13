@@ -1,7 +1,6 @@
 // Package main is the entry point for the WebAuthn example application.
 // It initializes the logger, loads environment variables, sets up database
 // and Redis connections, and starts the HTTP server with the defined routes.
-
 package main
 
 import (
@@ -45,14 +44,22 @@ func main() {
 		zap.L().Error("Failed to connect to database", zap.Error(err))
 		return
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			zap.L().Error("Error closing database", zap.Error(err))
+		}
+	}()
 
 	// Initialize Redis client
 	redisAddr := os.Getenv("REDIS_URL")
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 	})
-	defer redisClient.Close()
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			zap.L().Error("Error closing redis client", zap.Error(err))
+		}
+	}()
 
 	// Test Redis connection
 	ctx := context.Background()

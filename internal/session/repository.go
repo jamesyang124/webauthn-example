@@ -17,10 +17,10 @@ func SetWebauthnSessionDataWithErrorHandling(
 	ctx *fasthttp.RequestCtx,
 	redisClient *redis.Client,
 	sessionKey string,
-	sessionDataJson []byte,
+	sessionDataJSON []byte,
 	ttl time.Duration,
 ) bool {
-	err := redisClient.Set(context.Background(), sessionKey, string(sessionDataJson), ttl).Err()
+	err := redisClient.Set(context.Background(), sessionKey, string(sessionDataJSON), ttl).Err()
 	if err != nil {
 		zap.L().Error("Failed to persist session data",
 			zap.Error(err),

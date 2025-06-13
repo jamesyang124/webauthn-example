@@ -1,5 +1,4 @@
 // Package middlewares provides HTTP middleware utilities for the WebAuthn example application.
-
 package middlewares
 
 import "github.com/valyala/fasthttp"

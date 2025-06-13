@@ -11,19 +11,20 @@ linters:
     - staticcheck    # Deeper bug–finding and simplifications
     - errcheck       # Detect ignored errors
     - revive         # Modern style / naming linter (replaces golint)
+    - unused         # Unused variables / funcs (via staticcheck)
+  disable:
+    # Remove these lines if you DO want the check
+    - lll            # Long-line length limit 
+    - gocyclo        # Function cyclomatic complexity
+    - wsl            # Whitespace style issues
+    - depguard       # Ban unwanted imports
     - gosimple       # Code simplifications (from staticcheck)
     - ineffassign    # Dead assignments
     - typecheck      # Interface implementation / type errors
     - gosec          # Basic security issues (hard-coded creds, etc.)
     - gofmt          # gofmt style differences
     - goimports      # Import grouping + removal of unused imports
-    - unused         # Unused variables / funcs (via staticcheck)
-    - lll            # Long-line length limit 
-  disable:
-    # Remove these lines if you DO want the check
-    - gocyclo        # Function cyclomatic complexity
-    - wsl            # Whitespace style issues
-    - depguard       # Ban unwanted imports
+    
 
 # 2. Per-linter fine-tuning
 linters-settings:

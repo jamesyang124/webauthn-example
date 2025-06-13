@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	_ "github.com/lib/pq" // Justify blank import: required for PostgreSQL driver registration
+
 	"github.com/go-redis/redis/v8"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
@@ -17,7 +19,6 @@ import (
 	user "github.com/jamesyang124/webauthn-example/internal/user"
 	util "github.com/jamesyang124/webauthn-example/internal/util"
 	"github.com/jamesyang124/webauthn-example/types"
-	_ "github.com/lib/pq"
 	fasthttp "github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.uber.org/zap"
