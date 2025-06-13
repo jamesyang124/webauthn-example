@@ -5,6 +5,7 @@ import (
 
 	"github.com/jamesyang124/webauthn-example/types"
 	"github.com/valyala/fasthttp"
+	"go.uber.org/zap"
 )
 
 // ParseJSONBody parses the JSON body from fasthttp.RequestCtx into the provided struct pointer.
@@ -25,4 +26,16 @@ func MarshalAndRespondOnError(ctx *fasthttp.RequestCtx, v interface{}) ([]byte, 
 		return nil, err
 	}
 	return responseJSON, nil
+}
+
+// UnmarshalAndRespondOnError unmarshals JSON and handles error response/logging.
+func UnmarshalAndRespondOnError(ctx *fasthttp.RequestCtx, data []byte, v interface{}) bool {
+	err := json.Unmarshal(data, v)
+	if err != nil {
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to parse session data"}`)
+		zap.L().Error("Error parsing session data", zap.Error(err))
+		return false
+	}
+	return true
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8" // Import Redis package
+	"github.com/jamesyang124/webauthn-example/internal/util"
 	"github.com/jamesyang124/webauthn-example/types"
 	"github.com/joho/godotenv" // Import godotenv package
 	_ "github.com/lib/pq"      // Import PostgreSQL driver
@@ -16,6 +17,7 @@ import (
 )
 
 func main() {
+
 	// Initialize zap logger
 	logger, _ := zap.NewProduction()
 	zap.ReplaceGlobals(logger)
@@ -55,6 +57,8 @@ func main() {
 	presistance := new(types.Persistance)
 	presistance.Db = db
 	presistance.Cache = redisClient
+
+	util.InitWebAuthn()
 
 	// Pass presistance to PrepareRoutes
 	routesHandler := PrepareRoutes(presistance)
