@@ -1,4 +1,4 @@
-package repository
+package userrepo
 
 import (
 	"database/sql"
@@ -51,4 +51,30 @@ func QueryUserWebauthnByUsername(ctx *fasthttp.RequestCtx, dbConn *sql.DB, usern
 		return err
 	}
 	return nil
+}
+
+// UpdateUserWebauthnCredentials updates the user's webauthn credentials and handles error responses.
+func UpdateUserWebauthnCredentials(ctx *fasthttp.RequestCtx, db *sql.DB, userID string, signCount uint32, credentialIdEncoded, credentialPublicKeyEncoded, displayName, username string) (sql.Result, error) {
+	query := `UPDATE users SET webauthn_user_id = $1, webauthn_sign_count = $2, webauthn_credential_id = $3, webauthn_credential_public_key = $4, webauthn_displayname = $5 WHERE username = $6`
+	result, err := db.Exec(query, userID, signCount, credentialIdEncoded, credentialPublicKeyEncoded, displayName, username)
+	if err != nil {
+		zap.L().Error("Error updating user webauthn credentials", zap.Error(err))
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to persist credential data"}`)
+		return nil, err
+	}
+	return result, nil
+}
+
+// UpdateUserWebauthnSignCount updates the user's webauthn sign count and handles error responses.
+func UpdateUserWebauthnSignCount(ctx *fasthttp.RequestCtx, db *sql.DB, signCount uint32, username string) (sql.Result, error) {
+	query := `UPDATE users SET webauthn_sign_count = $1 WHERE username = $2`
+	result, err := db.Exec(query, signCount, username)
+	if err != nil {
+		zap.L().Error("Error updating user webauthn sign count", zap.Error(err))
+		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		ctx.SetBodyString(`{"error": "Failed to update sign count"}`)
+		return nil, err
+	}
+	return result, nil
 }
