@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/fasthttp/router"
 	"github.com/jamesyang124/webauthn-example/examples"
@@ -76,8 +75,7 @@ func notFoundHandler(ctx *fasthttp.RequestCtx) {
 	ctx.SetBody(jsonResponse)
 }
 
-func PrepareRoutes(logger *log.Logger, persistance *types.Persistance) fasthttp.RequestHandler {
-
+func PrepareRoutes(persistance *types.Persistance) fasthttp.RequestHandler {
 	routes := router.New()
 
 	routes.GET("/", rootPage)
