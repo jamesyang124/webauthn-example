@@ -1,44 +1,8 @@
-// Package handlers provides HTTP handlers for WebAuthn registration and authentication flows.
-//
-// This package contains the implementation of the HTTP handlers that manage the
-// WebAuthn registration and authentication processes. It includes handling
-// registration options, verification of registration, authentication options,
-// and verification of authentication. The handlers interact with the database
-// and Redis for session management and user credential storage. They also
-// handle the parsing and marshaling of JSON data, as well as the conversion
-// of requests between fasthttp and net/http formats.
-//
-// The package is designed to be used as part of a web application that
-// implements WebAuthn for user authentication. It relies on other packages
-// for the underlying WebAuthn protocol implementation and database access.
-//
-// Example usage:
-//
-//	package main
-//
-//	import (
-//	    "database/sql"
-//	    "github.com/go-redis/redis/v8"
-//	    "github.com/jamesyang124/webauthn-example/handlers"
-//	    "github.com/valyala/fasthttp"
-//	)
-//
-//	func main() {
-//	    db := // initialize your database connection
-//	    redisClient := // initialize your Redis client
-//
-//	    fasthttp.ListenAndServe(":8080", func(ctx *fasthttp.RequestCtx) {
-//	        switch string(ctx.Path()) {
-//	        case "/register/options":
-//	            handlers.HandleRegisterOptions(ctx, db, redisClient)
-//	        case "/register/verify":
-//	            handlers.HandleRegisterVerification(ctx, db, redisClient)
-//	        // add other routes for authentication and other handlers
-//	        default:
-//	            ctx.SetStatusCode(fasthttp.StatusNotFound)
-//	        }
-//	    })
-//	}
+// Package handlers provides HTTP handlers for WebAuthn registration and authentication.
+// It manages WebAuthn options and verification for registration and login.
+// Uses PostgreSQL and Redis for persistence and session management.
+// This package includes handler functions for registration and login flows,
+// and utilities for session management and WebAuthn credential handling.
 package handlers
 
 import (
@@ -54,7 +18,7 @@ import (
 	util "github.com/jamesyang124/webauthn-example/internal/util"
 	"github.com/jamesyang124/webauthn-example/types"
 	_ "github.com/lib/pq"
-	"github.com/valyala/fasthttp"
+	fasthttp "github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.uber.org/zap"
 )
@@ -98,17 +62,11 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *re
 	}
 
 	sessionKey := "webauthn_session:" + username
-	sessionDataJson, err := util.MarshalAndRespondOnError(ctx, sessionData)
+	sessionDataJSON, err := util.MarshalAndRespondOnError(ctx, sessionData)
 	if err != nil {
 		return
 	}
-	if !session.SetWebauthnSessionDataWithErrorHandling(
-		ctx,
-		redisClient,
-		sessionKey,
-		sessionDataJson,
-		86400*time.Second,
-	) {
+	if !session.SetWebauthnSessionDataWithErrorHandling(ctx, redisClient, sessionKey, sessionDataJSON, 86400*time.Second) {
 		return
 	}
 
@@ -196,16 +154,15 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 	}
 
 	credentialPublicKeyEncoded := util.EncodeRawURLEncoding(credential.PublicKey)
-	zap.L().
-		Info("credentialPublicKeyEncoded", zap.String("credentialPublicKeyEncoded", credentialPublicKeyEncoded))
+	zap.L().Info("credentialPublicKeyEncoded", zap.String("credentialPublicKeyEncoded", credentialPublicKeyEncoded))
 
-	credentialIdEncoded := util.EncodeRawURLEncoding(credential.ID)
-	zap.L().Info("credentialIdEncoded", zap.String("credentialIdEncoded", credentialIdEncoded))
+	credentialIDEncoded := util.EncodeRawURLEncoding(credential.ID)
+	zap.L().Info("credentialIDEncoded", zap.String("credentialIDEncoded", credentialIDEncoded))
 
 	result, err := user.UpdateUserWebauthnCredentials(ctx, db,
 		WebAuthnUser.ID,
 		credential.Authenticator.SignCount,
-		credentialIdEncoded,
+		credentialIDEncoded,
 		credentialPublicKeyEncoded,
 		username,
 		username,

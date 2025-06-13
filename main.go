@@ -1,3 +1,7 @@
+// Package main is the entry point for the WebAuthn example application.
+// It initializes the logger, loads environment variables, sets up database
+// and Redis connections, and starts the HTTP server with the defined routes.
+
 package main
 
 import (

@@ -3,7 +3,7 @@
 // from incoming requests, ensuring the data's integrity and correctness before any database operations
 // are performed.
 
-package userrepo
+package user
 
 import (
 	"fmt"

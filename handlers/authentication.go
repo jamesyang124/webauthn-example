@@ -1,6 +1,8 @@
-// Package handlers provides HTTP handlers for WebAuthn registration and authentication flows.
-// It includes handling of WebAuthn options and verification for both registration and login,
-// utilizing a PostgreSQL database and Redis for session management.
+// Package handlers provides HTTP handlers for WebAuthn registration and authentication.
+// It manages WebAuthn options and verification for registration and login.
+// Uses PostgreSQL and Redis for persistence and session management.
+// This package includes handler functions for registration and login flows,
+// and utilities for session management and WebAuthn credential handling.
 
 package handlers
 
@@ -34,7 +36,7 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 		return
 	}
 
-	var userID, webauthnUserID, displayName, credentialIdEncoded, credentialPublicKeyEncoded string
+	var userID, webauthnUserID, displayName, credentialIDEncoded, credentialPublicKeyEncoded string
 	// Query user by username and webauthn fields using repository helper
 	err = user.QueryUserWebauthnByUsername(
 		ctx,
@@ -43,7 +45,7 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 		&userID,
 		&webauthnUserID,
 		&displayName,
-		&credentialIdEncoded,
+		&credentialIDEncoded,
 		&credentialPublicKeyEncoded,
 	)
 	if err != nil {
@@ -56,7 +58,7 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 		return
 	}
 
-	credentialId, ok := util.DecodeCredentialID(ctx, credentialIdEncoded)
+	credentialID, ok := util.DecodeCredentialID(ctx, credentialIDEncoded)
 	if !ok {
 		return
 	}
@@ -65,9 +67,8 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 		webauthnUserID,
 		username,
 		displayName,
-		credentialId,
+		credentialID,
 		credentialPublicKey,
-		false, // BackupEligible
 	)
 
 	// Begin WebAuthn login
@@ -106,7 +107,8 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 }
 
 // HandleAuthenticateVerification processes the verification of WebAuthn authentication
-func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
+func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx,
+	db *sql.DB, redisClient *redis.Client) {
 	// Parse JSON input
 	var requestData map[string]interface{}
 	if err := util.ParseJSONBody(ctx, &requestData); err != nil {
@@ -122,7 +124,11 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisC
 	sessionKey := "webauthn_login_session:" + username
 	var sessionData webauthn.SessionData
 	// Get session data from Redis and parse directly
-	redisSessionData, ok := session.GetWebauthnSessionDataWithErrorHandling(ctx, redisClient, sessionKey)
+	redisSessionData, ok := session.GetWebauthnSessionDataWithErrorHandling(
+		ctx,
+		redisClient,
+		sessionKey,
+	)
 	if !ok {
 		return
 	}
@@ -134,11 +140,17 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisC
 	if err != nil {
 		return
 	}
-	zap.L().Info("parsing credentialData", zap.ByteString("credentialData", credentialData))
+	zap.L().Info(
+		"parsing credentialData",
+		zap.ByteString("credentialData", credentialData),
+	)
 
 	ctx.Request.SetBody(credentialData)
 	// Now ctx.PostBody() will return the new body
-	zap.L().Info("Overridden PostBody", zap.String("postBody", string(ctx.PostBody())))
+	zap.L().Info(
+		"Overridden PostBody",
+		zap.String("postBody", string(ctx.PostBody())),
+	)
 
 	var httpRequest http.Request
 	err = fasthttpadaptor.ConvertRequest(ctx, &httpRequest, true)
@@ -149,7 +161,7 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisC
 		return
 	}
 
-	var userID, webauthnUserID, displayName, credentialIdEncoded, credentialPublicKeyEncoded string
+	var userID, webauthnUserID, displayName, credentialIDEncoded, credentialPublicKeyEncoded string
 	// Query user by username and webauthn fields using repository helper
 	err = user.QueryUserWebauthnByUsername(
 		ctx,
@@ -158,14 +170,14 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisC
 		&userID,
 		&webauthnUserID,
 		&displayName,
-		&credentialIdEncoded,
+		&credentialIDEncoded,
 		&credentialPublicKeyEncoded,
 	)
 	if err != nil {
 		return
 	}
 
-	credentialId, ok := util.DecodeCredentialID(ctx, credentialIdEncoded)
+	credentialID, ok := util.DecodeCredentialID(ctx, credentialIDEncoded)
 	if !ok {
 		return
 	}
@@ -176,11 +188,11 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisC
 	}
 
 	// should get values from db tables
-	WebAuthnUser := util.NewWebAuthnUserWithCredential(
+	WebAuthnUser := util.NewWebAuthnUserWithBackupEligible(
 		webauthnUserID,
 		username,
 		displayName,
-		credentialId,
+		credentialID,
 		credentialPublicKey,
 		true, // BackupEligible
 	)
@@ -192,12 +204,16 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisC
 	}
 
 	// Update the sign count in the database using a repository helper
-	_, err = user.UpdateUserWebauthnSignCount(ctx, db, credential.Authenticator.SignCount, username)
+	_, err = user.UpdateUserWebauthnSignCount(
+		ctx,
+		db,
+		credential.Authenticator.SignCount,
+		username,
+	)
 	if err != nil {
-		zErr := zap.L().Error
-		zErr("Error updating sign count", zap.Error(err))
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to update sign count"}`)
+		zap.L().Error("Error updating sign count", zap.Error(err))
 		return
 	}
 

@@ -1,3 +1,7 @@
+// Package main sets up the HTTP server and routes for the WebAuthn example application.
+// It initializes the database, cache, and middleware, and defines the API endpoints
+// for WebAuthn registration and authentication, as well as version information.
+
 package main
 
 import (

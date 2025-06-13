@@ -1,6 +1,6 @@
-// Package user provides user-related database operations and validation logic for WebAuthn flows.
+// Package userrepo provides user-related database operations and validation logic for WebAuthn flows.
 
-package userrepo
+package user
 
 import (
 	"database/sql"
@@ -78,18 +78,10 @@ func UpdateUserWebauthnCredentials(
 	db *sql.DB,
 	userID string,
 	signCount uint32,
-	credentialIdEncoded, credentialPublicKeyEncoded, displayName, username string,
+	credentialIDEncoded, credentialPublicKeyEncoded, displayName, username string,
 ) (sql.Result, error) {
 	query := `UPDATE users SET webauthn_user_id = $1, webauthn_sign_count = $2, webauthn_credential_id = $3, webauthn_credential_public_key = $4, webauthn_displayname = $5 WHERE username = $6`
-	result, err := db.Exec(
-		query,
-		userID,
-		signCount,
-		credentialIdEncoded,
-		credentialPublicKeyEncoded,
-		displayName,
-		username,
-	)
+	result, err := db.Exec(query, userID, signCount, credentialIDEncoded, credentialPublicKeyEncoded, displayName, username)
 	if err != nil {
 		zap.L().Error("Error updating user webauthn credentials", zap.Error(err))
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
@@ -100,12 +92,7 @@ func UpdateUserWebauthnCredentials(
 }
 
 // UpdateUserWebauthnSignCount updates the user's webauthn sign count and handles error responses.
-func UpdateUserWebauthnSignCount(
-	ctx *fasthttp.RequestCtx,
-	db *sql.DB,
-	signCount uint32,
-	username string,
-) (sql.Result, error) {
+func UpdateUserWebauthnSignCount(ctx *fasthttp.RequestCtx, db *sql.DB, signCount uint32, username string) (sql.Result, error) {
 	query := `UPDATE users SET webauthn_sign_count = $1 WHERE username = $2`
 	result, err := db.Exec(query, signCount, username)
 	if err != nil {

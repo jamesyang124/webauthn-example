@@ -15,7 +15,6 @@ linters:
     - ineffassign    # Dead assignments
     - typecheck      # Interface implementation / type errors
     - gosec          # Basic security issues (hard-coded creds, etc.)
-    - depguard       # Ban unwanted imports
     - gofmt          # gofmt style differences
     - goimports      # Import grouping + removal of unused imports
     - unused         # Unused variables / funcs (via staticcheck)
@@ -24,6 +23,7 @@ linters:
     # Remove these lines if you DO want the check
     - gocyclo        # Function cyclomatic complexity
     - wsl            # Whitespace style issues
+    - depguard       # Ban unwanted imports
 
 # 2. Per-linter fine-tuning
 linters-settings:
@@ -38,11 +38,13 @@ linters-settings:
       - name: var-naming
       - name: package-comments
       - name: blank-imports       # Allow `_` imports if commented
-  depguard:
-    list-type: blacklist
-    packages: ["github.com/sirupsen/logrus", "log"]   # Forbid these packages
-    packages-with-error-message:
-      fmt: "Use zap.L() or slog.Logger instead of fmt for logging"
+#  depguard:
+#    list-type: blacklist
+#    packages: 
+#      - "github.com/sirupsen/logrus"
+#      - "log"   # Forbid these packages
+#    packages-with-error-message:
+#      fmt: "Use zap.L() or slog.Logger instead of fmt for logging"
 
 # 3. Skip folders / files that shouldn’t be linted
 skip-dirs:
@@ -66,6 +68,6 @@ issues:
       text: "is too complex"
 
 # 5. Cache location (default is $HOME/.cache/golangci-lint)
-#cache:
-#  enabled: true
+cache:
+  enabled: false
 # ───────────────────────────────────────────────────────────────────────────

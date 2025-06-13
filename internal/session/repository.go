@@ -1,5 +1,4 @@
 // Package session provides helpers for managing WebAuthn session data in Redis.
-//
 // It includes functions to set and get session data with automatic error handling and logging.
 // The session data is stored as JSON and is associated with a TTL (time-to-live) for expiration.
 package session
@@ -23,7 +22,10 @@ func SetWebauthnSessionDataWithErrorHandling(
 ) bool {
 	err := redisClient.Set(context.Background(), sessionKey, string(sessionDataJson), ttl).Err()
 	if err != nil {
-		zap.L().Error("Failed to persist session data", zap.Error(err), zap.String("sessionKey", sessionKey))
+		zap.L().Error("Failed to persist session data",
+			zap.Error(err),
+			zap.String("sessionKey", sessionKey),
+		)
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"error": "Failed to persist session data"}`)
 		return false
@@ -44,7 +46,10 @@ func GetWebauthnSessionDataWithErrorHandling(
 			ctx.SetStatusCode(fasthttp.StatusBadRequest)
 			ctx.SetBodyString(`{"error": "Session data not found"}`)
 		} else {
-			zap.L().Error("Error retrieving session data", zap.Error(err), zap.String("sessionKey", sessionKey))
+			zap.L().Error("Error retrieving session data",
+				zap.Error(err),
+				zap.String("sessionKey", sessionKey),
+			)
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 			ctx.SetBodyString(`{"error": "Failed to retrieve session data"}`)
 		}

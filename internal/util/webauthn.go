@@ -114,10 +114,25 @@ func NewWebAuthnUser(id, name, displayName string) *types.WebAuthnUser {
 	}
 }
 
-// NewWebAuthnUserWithCredential creates a WebAuthnUser with a single credential and flags.
-func NewWebAuthnUserWithCredential(
+// NewWebAuthnUserWithCredential creates a WebAuthnUser with a credential and backup eligibility flag.
+func NewWebAuthnUserWithCredential(id, name, displayName string, credentialID, credentialPublicKey []byte) *types.WebAuthnUser {
+	return &types.WebAuthnUser{
+		ID:          id,
+		Name:        name,
+		DisplayName: displayName,
+		Credentials: []webauthn.Credential{
+			{
+				ID:        credentialID,
+				PublicKey: credentialPublicKey,
+			},
+		},
+	}
+}
+
+// NewWebAuthnUserWithBackupEligible creates a WebAuthnUser with a credential and BackupEligible=true.
+func NewWebAuthnUserWithBackupEligible(
 	id, name, displayName string,
-	credentialId, credentialPublicKey []byte,
+	credentialID, credentialPublicKey []byte,
 	backupEligible bool,
 ) *types.WebAuthnUser {
 	return &types.WebAuthnUser{
@@ -126,7 +141,7 @@ func NewWebAuthnUserWithCredential(
 		DisplayName: displayName,
 		Credentials: []webauthn.Credential{
 			{
-				ID:        credentialId,
+				ID:        credentialID,
 				PublicKey: credentialPublicKey,
 				Flags: webauthn.CredentialFlags{
 					BackupEligible: backupEligible,
