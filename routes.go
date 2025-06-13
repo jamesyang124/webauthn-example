@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/fasthttp/router"
-	"github.com/jamesyang124/webauthn-example/examples"
+	"github.com/jamesyang124/webauthn-example/handlers"
 	"github.com/jamesyang124/webauthn-example/middlewares"
 	"github.com/jamesyang124/webauthn-example/types"
 	"github.com/valyala/fasthttp"
@@ -35,32 +35,32 @@ func versionHandler(ctx *fasthttp.RequestCtx) {
 
 func authLogin(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		examples.HandleAuthLogin(ctx, persistance.Db)
+		handlers.HandleAuthLogin(ctx, persistance.Db)
 	}
 }
 
 func waRegisterOptions(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		examples.HandleRegisterOptions(ctx, persistance.Db, persistance.Cache)
+		handlers.HandleRegisterOptions(ctx, persistance.Db, persistance.Cache)
 	}
 }
 
 func waRegisterVerification(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
 		// Parse JSON input
-		examples.HandleRegisterVerification(ctx, persistance.Db, persistance.Cache)
+		handlers.HandleRegisterVerification(ctx, persistance.Db, persistance.Cache)
 	}
 }
 
 func waAuthenticateOptions(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		examples.HandleAuthenticateOptions(ctx, persistance.Db, persistance.Cache)
+		handlers.HandleAuthenticateOptions(ctx, persistance.Db, persistance.Cache)
 	}
 }
 
 func waAuthenticateVerification(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
 	return func(ctx *fasthttp.RequestCtx) {
-		examples.HandleAuthenticateVerification(ctx, persistance.Db, persistance.Cache)
+		handlers.HandleAuthenticateVerification(ctx, persistance.Db, persistance.Cache)
 	}
 }
 
