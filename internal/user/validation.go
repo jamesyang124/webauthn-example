@@ -1,3 +1,8 @@
+// Package user provides user-related database operations and validation logic for WebAuthn flows.
+// It includes functionality to validate and extract user information such as username and display name
+// from incoming requests, ensuring the data's integrity and correctness before any database operations
+// are performed.
+
 package userrepo
 
 import (
@@ -20,7 +25,10 @@ func ValidateUsername(ctx *fasthttp.RequestCtx, requestData map[string]interface
 }
 
 // ValidateUsernameAndDisplayname validates and extracts username and displayname from requestData.
-func ValidateUsernameAndDisplayname(ctx *fasthttp.RequestCtx, requestData map[string]interface{}) (string, string, error) {
+func ValidateUsernameAndDisplayname(
+	ctx *fasthttp.RequestCtx,
+	requestData map[string]interface{},
+) (string, string, error) {
 	username, ok := requestData["username"].(string)
 	if !ok || username == "" {
 		zap.L().Error("Invalid username type")

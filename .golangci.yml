@@ -1,0 +1,71 @@
+# .golangci.yml ──────────────────────────────────────────────────────────────
+run:
+  tests: true            # Lint *_test.go files as well
+  timeout: 5m            # Abort if the entire run takes longer than this
+  # By default golangci-lint walks ./...; pass extra paths on the CLI if needed
+
+# 1. Select linters to enable/disable
+linters:
+  enable:
+    - govet          # Standard-library vet checks (bugs, misuses)
+    - staticcheck    # Deeper bug–finding and simplifications
+    - errcheck       # Detect ignored errors
+    - revive         # Modern style / naming linter (replaces golint)
+    - gosimple       # Code simplifications (from staticcheck)
+    - ineffassign    # Dead assignments
+    - typecheck      # Interface implementation / type errors
+    - gosec          # Basic security issues (hard-coded creds, etc.)
+    - depguard       # Ban unwanted imports
+    - gofmt          # gofmt style differences
+    - goimports      # Import grouping + removal of unused imports
+    - unused         # Unused variables / funcs (via staticcheck)
+    - lll            # Long-line length limit 
+  disable:
+    # Remove these lines if you DO want the check
+    - gocyclo        # Function cyclomatic complexity
+    - wsl            # Whitespace style issues
+
+# 2. Per-linter fine-tuning
+linters-settings:
+  lll:
+    line-length: 100
+    tab-width: 2         
+  revive:
+    ignore-generated-header: true
+    severity: warning
+    rules:
+      - name: indent-error-flow   # Require early returns on errors
+      - name: var-naming
+      - name: package-comments
+      - name: blank-imports       # Allow `_` imports if commented
+  depguard:
+    list-type: blacklist
+    packages: ["github.com/sirupsen/logrus", "log"]   # Forbid these packages
+    packages-with-error-message:
+      fmt: "Use zap.L() or slog.Logger instead of fmt for logging"
+
+# 3. Skip folders / files that shouldn’t be linted
+skip-dirs:
+  - vendor
+  - third_party
+  - generated
+  - migrations           # e.g. pure SQL files
+skip-files:
+  - ".*_generated.go"
+  - "mock_.*\\.go"
+
+# 4. Issue reporting & exclusions
+issues:
+  exclude-use-default: false      # Keep default exclusions
+  max-issues-per-linter: 0        # 0 = unlimited (surface everything)
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test\.go             # Don’t check errcheck in test files
+      linters: [errcheck]
+    - linters: [gocyclo]          # Allow complex functions that would trip gocyclo
+      text: "is too complex"
+
+# 5. Cache location (default is $HOME/.cache/golangci-lint)
+#cache:
+#  enabled: true
+# ───────────────────────────────────────────────────────────────────────────

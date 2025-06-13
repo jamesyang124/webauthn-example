@@ -1,3 +1,9 @@
+// Package util provides utility functions for JSON, base64, and WebAuthn operations.
+//
+// This package includes functions to parse and marshal JSON bodies,
+// respond with errors in a consistent format, and handle WebAuthn
+// specific data encoding and decoding.
+
 package util
 
 import (
@@ -22,7 +28,13 @@ func ParseJSONBody(ctx *fasthttp.RequestCtx, v interface{}) error {
 func MarshalAndRespondOnError(ctx *fasthttp.RequestCtx, v interface{}) ([]byte, error) {
 	responseJSON, err := json.Marshal(v)
 	if err != nil {
-		types.RespondWithError(ctx, fasthttp.StatusInternalServerError, "Failed to marshal response", "Error marshaling response", err)
+		types.RespondWithError(
+			ctx,
+			fasthttp.StatusInternalServerError,
+			"Failed to marshal response",
+			"Error marshaling response",
+			err,
+		)
 		return nil, err
 	}
 	return responseJSON, nil

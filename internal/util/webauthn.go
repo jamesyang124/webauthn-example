@@ -1,3 +1,8 @@
+// Package util provides utility functions for JSON, base64, and WebAuthn operations.
+//
+// This package includes functions to initialize WebAuthn, begin and finish
+// registration and login processes, and create WebAuthnUser instances. It is
+// meant to be used internally within the webauthn-example application.
 package util
 
 import (
@@ -31,18 +36,32 @@ func InitWebAuthn() {
 }
 
 // BeginRegistration wraps WebAuthn.BeginRegistration and handles errors.
-func BeginRegistration(ctx *fasthttp.RequestCtx, user *types.WebAuthnUser) (options *protocol.CredentialCreation, sessionData *webauthn.SessionData, ok bool) {
+func BeginRegistration(
+	ctx *fasthttp.RequestCtx,
+	user *types.WebAuthnUser,
+) (options *protocol.CredentialCreation, sessionData *webauthn.SessionData, ok bool) {
 	options, sessionData, err := WebAuthn.BeginRegistration(user)
 	if err != nil {
 		zap.L().Error("Failed to begin WebAuthn registration", zap.Error(err))
-		types.RespondWithError(ctx, fasthttp.StatusInternalServerError, "Failed to begin WebAuthn registration", "Error beginning WebAuthn registration", err)
+		types.RespondWithError(
+			ctx,
+			fasthttp.StatusInternalServerError,
+			"Failed to begin WebAuthn registration",
+			"Error beginning WebAuthn registration",
+			err,
+		)
 		return nil, nil, false
 	}
 	return options, sessionData, true
 }
 
 // FinishRegistration wraps WebAuthn.FinishRegistration and handles errors.
-func FinishRegistration(ctx *fasthttp.RequestCtx, user *types.WebAuthnUser, sessionData webauthn.SessionData, httpRequest *http.Request) (credential *webauthn.Credential, ok bool) {
+func FinishRegistration(
+	ctx *fasthttp.RequestCtx,
+	user *types.WebAuthnUser,
+	sessionData webauthn.SessionData,
+	httpRequest *http.Request,
+) (credential *webauthn.Credential, ok bool) {
 	credential, err := WebAuthn.FinishRegistration(user, sessionData, httpRequest)
 	if err != nil {
 		zap.L().Error("Error finishing WebAuthn registration", zap.Error(err))
@@ -54,7 +73,10 @@ func FinishRegistration(ctx *fasthttp.RequestCtx, user *types.WebAuthnUser, sess
 }
 
 // BeginLogin wraps WebAuthn.BeginLogin and handles errors.
-func BeginLogin(ctx *fasthttp.RequestCtx, user *types.WebAuthnUser) (options *protocol.CredentialAssertion, sessionData *webauthn.SessionData, ok bool) {
+func BeginLogin(
+	ctx *fasthttp.RequestCtx,
+	user *types.WebAuthnUser,
+) (options *protocol.CredentialAssertion, sessionData *webauthn.SessionData, ok bool) {
 	options, sessionData, err := WebAuthn.BeginLogin(user)
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
@@ -66,7 +88,12 @@ func BeginLogin(ctx *fasthttp.RequestCtx, user *types.WebAuthnUser) (options *pr
 }
 
 // FinishLogin wraps WebAuthn.FinishLogin and handles errors.
-func FinishLogin(ctx *fasthttp.RequestCtx, user *types.WebAuthnUser, sessionData webauthn.SessionData, httpRequest *http.Request) (credential *webauthn.Credential, ok bool) {
+func FinishLogin(
+	ctx *fasthttp.RequestCtx,
+	user *types.WebAuthnUser,
+	sessionData webauthn.SessionData,
+	httpRequest *http.Request,
+) (credential *webauthn.Credential, ok bool) {
 	credential, err := WebAuthn.FinishLogin(user, sessionData, httpRequest)
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
@@ -88,7 +115,11 @@ func NewWebAuthnUser(id, name, displayName string) *types.WebAuthnUser {
 }
 
 // NewWebAuthnUserWithCredential creates a WebAuthnUser with a single credential and flags.
-func NewWebAuthnUserWithCredential(id, name, displayName string, credentialId, credentialPublicKey []byte, backupEligible bool) *types.WebAuthnUser {
+func NewWebAuthnUserWithCredential(
+	id, name, displayName string,
+	credentialId, credentialPublicKey []byte,
+	backupEligible bool,
+) *types.WebAuthnUser {
 	return &types.WebAuthnUser{
 		ID:          id,
 		Name:        name,

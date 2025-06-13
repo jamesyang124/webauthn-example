@@ -1,3 +1,5 @@
+// Package types defines shared types and response helpers for the WebAuthn example application.
+
 package types
 
 import (

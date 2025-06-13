@@ -1,3 +1,9 @@
+// Package util offers helpers for encoding/decoding base64, JSON operations, and WebAuthn utilities.
+// It centralizes reusable logic for error handling and data transformation.
+// Use this package for all base64, JSON, and WebAuthn-related helpers to ensure consistency.
+// Designed for internal use in the WebAuthn example project.
+// Keeps handler and repository code clean and DRY.
+
 package util
 
 import (

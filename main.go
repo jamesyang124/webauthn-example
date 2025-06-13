@@ -21,7 +21,11 @@ func main() {
 	// Initialize zap logger
 	logger, _ := zap.NewProduction()
 	zap.ReplaceGlobals(logger)
-	defer logger.Sync()
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			zap.L().Error("Error syncing logger", zap.Error(err))
+		}
+	}()
 
 	// Load environment variables from .env file
 	err := godotenv.Load()

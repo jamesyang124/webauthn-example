@@ -11,12 +11,6 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func authRegister() func(ctx *fasthttp.RequestCtx) {
-	return func(ctx *fasthttp.RequestCtx) {
-		fmt.Fprintf(ctx, "Welcome to the email/username basic auth registration!")
-	}
-}
-
 func rootPage(ctx *fasthttp.RequestCtx) {
 	ctx.SetContentType("text/html")
 	ctx.SendFile("./views/dist/index.html")
@@ -31,12 +25,6 @@ func versionHandler(ctx *fasthttp.RequestCtx) {
 	}
 	jsonResponse, _ := json.Marshal(response)
 	ctx.SetBody(jsonResponse)
-}
-
-func authLogin(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
-	return func(ctx *fasthttp.RequestCtx) {
-		handlers.HandleAuthLogin(ctx, persistance.Db)
-	}
 }
 
 func waRegisterOptions(persistance *types.Persistance) func(ctx *fasthttp.RequestCtx) {
@@ -83,8 +71,6 @@ func PrepareRoutes(persistance *types.Persistance) fasthttp.RequestHandler {
 	routes.ServeFiles("/assets/{filepath:*}", "./views/dist/assets")
 
 	routes.GET("/version", versionHandler)
-	routes.POST("/auth/login", authLogin(persistance))
-	routes.POST("/auth/register", authRegister())
 
 	waRegister := routes.Group("/webauthn/register")
 	waRegister.POST("/options", waRegisterOptions(persistance))
