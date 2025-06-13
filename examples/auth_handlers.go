@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 
+	"github.com/jamesyang124/webauthn-example/types"
 	"github.com/valyala/fasthttp"
 )
 
@@ -18,11 +19,10 @@ func HandleAuthLogin(ctx *fasthttp.RequestCtx, db *sql.DB) {
 	err := db.QueryRow("SELECT id, username, created_at FROM users WHERE email=$1 AND password_hash=crypt($2, password_hash)", useremail, inputPassword).Scan(&userID, &username, &createDate)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			ctx.Error("User not found or invalid password", fasthttp.StatusUnauthorized)
+			types.RespondWithError(ctx, fasthttp.StatusUnauthorized, "User not found or invalid password", "User not found or invalid password", err)
 		} else {
-			ctx.Error("Database query error", fasthttp.StatusInternalServerError)
+			types.RespondWithError(ctx, fasthttp.StatusInternalServerError, "Database query error", "Database query error", err)
 		}
-		ctx.Logger().Printf("Error in HandleBaseAuth: %s", err)
 		return
 	}
 
@@ -33,14 +33,11 @@ func HandleAuthLogin(ctx *fasthttp.RequestCtx, db *sql.DB) {
 	}
 	responseJSON, err := json.Marshal(response)
 	if err != nil {
-		ctx.Error("Failed to marshal response", fasthttp.StatusInternalServerError)
-		ctx.Logger().Printf("Error marshaling response: %s", err)
+		types.RespondWithError(ctx, fasthttp.StatusInternalServerError, "Failed to marshal response", "Error marshaling response", err)
 		return
 	}
 
 	ctx.SetContentType("application/json")
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetBodyString(string(responseJSON))
-
-	ctx.Logger().Printf("HandleBaseAuth called")
 }
