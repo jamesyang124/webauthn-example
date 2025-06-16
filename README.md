@@ -48,6 +48,7 @@ remove `user: 501:501` in docker-compose file if mount volume instead.
 
 - UI and persist display name
 - persist credentials table for 1 to many relationship with user table.
+- refactor app logic with https://github.com/samber/mo
 
 ## Reference
 - https://www.corbado.com/blog/webauthn-user-id-userhandle#webauthn-credential-id

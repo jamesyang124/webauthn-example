@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -20,19 +21,22 @@ import (
 var (
 	WebAuthn     *webauthn.WebAuthn
 	RegisterTmpl *template.Template
+	once         sync.Once
 )
 
 // InitWebAuthn initializes the WebAuthn instance with the correct config.
 func InitWebAuthn() {
-	var err error
-	WebAuthn, err = webauthn.New(&webauthn.Config{
-		RPDisplayName: "Example Corp",
-		RPID:          "localhost",
-		RPOrigins:     []string{"http://localhost:8080"},
+	once.Do(func() {
+		var err error
+		WebAuthn, err = webauthn.New(&webauthn.Config{
+			RPDisplayName: "Example Corp",
+			RPID:          "localhost",
+			RPOrigins:     []string{"http://localhost:8080"},
+		})
+		if err != nil {
+			log.Fatalf("failed to create WebAuthn instance: %v", err)
+		}
 	})
-	if err != nil {
-		log.Fatalf("failed to create WebAuthn instance: %v", err)
-	}
 }
 
 // BeginRegistration wraps WebAuthn.BeginRegistration and handles errors.
