@@ -48,7 +48,15 @@ remove `user: 501:501` in docker-compose file if mount volume instead.
 
 - UI and persist display name
 - persist credentials table for 1 to many relationship with user table.
-- refactor app logic with https://github.com/samber/mo
+- refactor app logic with https://github.com/samber/mo 
+  - Try monad cannot chain with FlatMap
+  - may drop out the FP replacement for app logic
+- refactor error response handling by `types.RespondWithError`
+  - registration
+  - session
+  - user
+- consider meaningful error types instead log error
+- 
 
 ## Reference
 - https://www.corbado.com/blog/webauthn-user-id-userhandle#webauthn-credential-id
