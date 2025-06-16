@@ -4,8 +4,8 @@ package util
 import (
 	"encoding/base64"
 
+	"github.com/jamesyang124/webauthn-example/types"
 	"github.com/valyala/fasthttp"
-	"go.uber.org/zap"
 )
 
 // EncodeRawURLEncoding encodes bytes to a base64.RawURLEncoding string.
@@ -22,9 +22,13 @@ func DecodeRawURLEncoding(s string) ([]byte, error) {
 func DecodeCredentialID(ctx *fasthttp.RequestCtx, encoded string) ([]byte, bool) {
 	decoded, err := DecodeRawURLEncoding(encoded)
 	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to decode webauthn credential id"}`)
-		zap.L().Error("Error decoding webauthn credential id", zap.Error(err))
+		types.RespondWithError(
+			ctx,
+			fasthttp.StatusInternalServerError,
+			`{"error": "Failed to decode webauthn credential id"}`,
+			"Error decoding webauthn credential id",
+			err,
+		)
 		return nil, false
 	}
 	return decoded, true
@@ -34,9 +38,13 @@ func DecodeCredentialID(ctx *fasthttp.RequestCtx, encoded string) ([]byte, bool)
 func DecodeCredentialPublicKey(ctx *fasthttp.RequestCtx, encoded string) ([]byte, bool) {
 	decoded, err := DecodeRawURLEncoding(encoded)
 	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to decode public key"}`)
-		zap.L().Error("Error decoding public key", zap.Error(err))
+		types.RespondWithError(
+			ctx,
+			fasthttp.StatusInternalServerError,
+			`{"error": "Failed to decode public key"}`,
+			"Error decoding public key",
+			err,
+		)
 		return nil, false
 	}
 	return decoded, true

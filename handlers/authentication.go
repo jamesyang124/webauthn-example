@@ -7,7 +7,6 @@ package handlers
 
 import (
 	"database/sql"
-	"net/http"
 	"time"
 
 	_ "github.com/lib/pq" // Justify blank import: required for PostgreSQL driver registration
@@ -18,7 +17,6 @@ import (
 	user "github.com/jamesyang124/webauthn-example/internal/user"
 	util "github.com/jamesyang124/webauthn-example/internal/util"
 	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.uber.org/zap"
 )
 
@@ -58,11 +56,13 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 		return
 	}
 
+	// Decode the credentialIDEncoded
 	credentialID, ok := util.DecodeCredentialID(ctx, credentialIDEncoded)
 	if !ok {
 		return
 	}
 
+	// Prepare webauthn user struct
 	WebAuthnUser := util.NewWebAuthnUserWithCredential(
 		webauthnUserID,
 		username,
@@ -77,12 +77,14 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 		return
 	}
 
-	// Persist sessionData to Redis with TTL
+	// Compose sessionDataJSON to related key
 	sessionKey := "webauthn_login_session:" + username
 	sessionDataJSON, err := util.MarshalAndRespondOnError(ctx, sessionData)
 	if err != nil {
 		return
 	}
+
+	// Persist sessionData to Redis with TTL
 	if !session.SetWebauthnSessionDataWithErrorHandling(
 		ctx,
 		redisClient,
@@ -93,6 +95,7 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 		return
 	}
 
+	// Preparse response JSON
 	responseJSON, err := util.MarshalAndRespondOnError(ctx, options)
 	if err != nil {
 		return
@@ -121,9 +124,9 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx,
 		return
 	}
 
+	// Get session data from Redis and parse directly
 	sessionKey := "webauthn_login_session:" + username
 	var sessionData webauthn.SessionData
-	// Get session data from Redis and parse directly
 	redisSessionData, ok := session.GetWebauthnSessionDataWithErrorHandling(
 		ctx,
 		redisClient,
@@ -132,32 +135,22 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx,
 	if !ok {
 		return
 	}
+
+	// get session data from persistance
 	if !util.UnmarshalAndRespondOnError(ctx, []byte(redisSessionData), &sessionData) {
 		return
 	}
 
+	// fetch credential field from request JSON payload
 	credentialData, err := util.MarshalAndRespondOnError(ctx, requestData["credential"])
 	if err != nil {
 		return
 	}
-	zap.L().Info(
-		"parsing credentialData",
-		zap.ByteString("credentialData", credentialData),
-	)
 
+	// adaption for different http request input type
 	ctx.Request.SetBody(credentialData)
-	// Now ctx.PostBody() will return the new body
-	zap.L().Info(
-		"Overridden PostBody",
-		zap.String("postBody", string(ctx.PostBody())),
-	)
-
-	var httpRequest http.Request
-	err = fasthttpadaptor.ConvertRequest(ctx, &httpRequest, true)
+	httpRequest, err := util.ConvertFastHTTPToHTTPRequest(ctx)
 	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to convert request"}`)
-		zap.L().Error("Error converting fasthttp request", zap.Error(err))
 		return
 	}
 
@@ -198,7 +191,7 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx,
 	)
 
 	// Finish WebAuthn login
-	credential, ok := util.FinishLogin(ctx, WebAuthnUser, sessionData, &httpRequest)
+	credential, ok := util.FinishLogin(ctx, WebAuthnUser, sessionData, httpRequest)
 	if !ok {
 		return
 	}
@@ -211,9 +204,6 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx,
 		username,
 	)
 	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to update sign count"}`)
-		zap.L().Error("Error updating sign count", zap.Error(err))
 		return
 	}
 

@@ -46,7 +46,6 @@ func BeginRegistration(
 ) (options *protocol.CredentialCreation, sessionData *webauthn.SessionData, ok bool) {
 	options, sessionData, err := WebAuthn.BeginRegistration(user)
 	if err != nil {
-		zap.L().Error("Failed to begin WebAuthn registration", zap.Error(err))
 		types.RespondWithError(
 			ctx,
 			fasthttp.StatusInternalServerError,
@@ -68,9 +67,13 @@ func FinishRegistration(
 ) (credential *webauthn.Credential, ok bool) {
 	credential, err := WebAuthn.FinishRegistration(user, sessionData, httpRequest)
 	if err != nil {
-		zap.L().Error("Error finishing WebAuthn registration", zap.Error(err))
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		ctx.SetBodyString(`{"error": "Verification failed"}`)
+		types.RespondWithError(
+			ctx,
+			fasthttp.StatusBadRequest,
+			`{"error": "Verification failed"}`,
+			"Error finishing WebAuthn registration",
+			err,
+		)
 		return nil, false
 	}
 	return credential, true
@@ -83,8 +86,13 @@ func BeginLogin(
 ) (options *protocol.CredentialAssertion, sessionData *webauthn.SessionData, ok bool) {
 	options, sessionData, err := WebAuthn.BeginLogin(user)
 	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to begin WebAuthn login"}`)
+		types.RespondWithError(
+			ctx,
+			fasthttp.StatusInternalServerError,
+			`{"error": "Failed to begin WebAuthn login"}`,
+			"Error beginning WebAuthn login",
+			err,
+		)
 		zap.L().Error("Error beginning WebAuthn login", zap.Error(err))
 		return nil, nil, false
 	}
@@ -100,9 +108,13 @@ func FinishLogin(
 ) (credential *webauthn.Credential, ok bool) {
 	credential, err := WebAuthn.FinishLogin(user, sessionData, httpRequest)
 	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		ctx.SetBodyString(`{"error": "Login verification failed"}`)
-		zap.L().Error("Error finishing WebAuthn login", zap.Error(err))
+		types.RespondWithError(
+			ctx,
+			fasthttp.StatusBadRequest,
+			`{"error": "Login verification failed"}`,
+			"Error finishing WebAuthn login",
+			err,
+		)
 		return nil, false
 	}
 	return credential, true
