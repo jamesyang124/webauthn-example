@@ -18,7 +18,7 @@ import (
 	session "github.com/jamesyang124/webauthn-example/internal/session"
 	user "github.com/jamesyang124/webauthn-example/internal/user"
 	util "github.com/jamesyang124/webauthn-example/internal/util"
-	"github.com/jamesyang124/webauthn-example/types"
+	"github.com/jamesyang124/webauthn-example/internal/weberror"
 	fasthttp "github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.uber.org/zap"
@@ -27,28 +27,33 @@ import (
 // HandleRegisterOptions handles the WebAuthn registration options
 func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	var requestData map[string]interface{}
-	if err := util.ParseJSONBody(ctx, &requestData); err != nil {
+	var username string
+	if _, err := util.ParseJSONBody(ctx, &requestData); err != nil {
 		return
 	}
 
-	username, ok := user.ExtractUsername(ctx, requestData)
-	if !ok {
-		return
-	}
+	_, _ = user.ValidateUsername(ctx, requestData, &username)
 
 	var userID, createDate string
-	err := user.QueryUserByUsername(ctx, db, username, &userID, &username, &createDate)
+	err := user.QueryUserByUsername(db, username, &userID, &username, &createDate)
 	if err != nil {
+		if appErr, ok := err.(*weberror.AppError); ok {
+			httpErr := weberror.ToHTTPError(appErr)
+			httpErr.RespondAndLog(ctx)
+		} else {
+			appErr := weberror.UnexpectedError(err, "QueryUserByUsername")
+			httpErr := weberror.ToHTTPError(appErr)
+			httpErr.RespondAndLog(ctx)
+		}
 		return
 	}
 
 	webauthnUserID, err := uuid.NewV7()
 	if err != nil {
-		zErr := zap.L().Error
-		zErr("Error to generate webauthn user id uuidv7", zap.Error(err))
-		types.RespondWithError(ctx, fasthttp.StatusInternalServerError,
-			"Error to generate webauthn user id uuidv7",
-			"Error to generate webauthn user id uuidv7", err)
+		appErr := weberror.UUIDGenerationError(err)
+		httpErr := weberror.ToHTTPError(appErr)
+		httpErr.RespondAndLog(ctx)
+		return
 	}
 
 	WebAuthnUser := util.NewWebAuthnUser(
@@ -67,7 +72,9 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *re
 	if err != nil {
 		return
 	}
-	if !session.SetWebauthnSessionDataWithErrorHandling(ctx, redisClient, sessionKey, sessionDataJSON, 86400*time.Second) {
+	_, err = session.SetWebauthnSessionData(ctx, redisClient, sessionKey, sessionDataJSON, 86400*time.Second)
+
+	if err != nil {
 		return
 	}
 
@@ -86,7 +93,7 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *re
 // HandleRegisterVerification handles the verification of WebAuthn registration
 func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	var requestData map[string]interface{}
-	if err := util.ParseJSONBody(ctx, &requestData); err != nil {
+	if _, err := util.ParseJSONBody(ctx, &requestData); err != nil {
 		return
 	}
 
@@ -97,17 +104,12 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 
 	sessionKey := "webauthn_session:" + username
 	var sessionData webauthn.SessionData
-	redisSessionData, ok := session.GetWebauthnSessionDataWithErrorHandling(
+	redisSessionData, _ := session.GetWebauthnSessionData(
 		ctx,
 		redisClient,
 		sessionKey,
 	)
-	if !ok {
-		return
-	}
-	if !util.UnmarshalAndRespondOnError(ctx, []byte(redisSessionData), &sessionData) {
-		return
-	}
+	_, _ = util.UnmarshalAndRespondOnError(ctx, []byte(redisSessionData), &sessionData)
 
 	zap.L().Info("Register verify sessionDataStr", zap.String("sessionDataStr", redisSessionData))
 
@@ -117,11 +119,11 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 	}
 
 	var credentialMap map[string]interface{}
-	if err := util.ParseJSONBody(ctx, &credentialMap); err != nil {
-		zErr := zap.L().Error
-		zErr("Error unmarshaling credential data", zap.Error(err))
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		ctx.SetBodyString(`{"error": "Invalid credential data"}`)
+
+	if _, err := util.ParseJSONBody(ctx, &credentialMap); err != nil {
+		appErr := weberror.CredentialDataInvalidError(err)
+		httpErr := weberror.ToHTTPError(appErr)
+		httpErr.RespondAndLog(ctx)
 		return
 	}
 
@@ -138,8 +140,16 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 	}
 
 	var userID, createDate string
-	err = user.QueryUserByUsername(ctx, db, username, &userID, &username, &createDate)
+	err = user.QueryUserByUsername(db, username, &userID, &username, &createDate)
 	if err != nil {
+		if appErr, ok := err.(*weberror.AppError); ok {
+			httpErr := weberror.ToHTTPError(appErr)
+			httpErr.RespondAndLog(ctx)
+		} else {
+			appErr := weberror.UnexpectedError(err, "QueryUserByUsername")
+			httpErr := weberror.ToHTTPError(appErr)
+			httpErr.RespondAndLog(ctx)
+		}
 		return
 	}
 
@@ -160,7 +170,7 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 	credentialIDEncoded := util.EncodeRawURLEncoding(credential.ID)
 	zap.L().Info("credentialIDEncoded", zap.String("credentialIDEncoded", credentialIDEncoded))
 
-	result, err := user.UpdateUserWebauthnCredentials(ctx, db,
+	result, err := user.UpdateUserWebauthnCredentials(db,
 		WebAuthnUser.ID,
 		credential.Authenticator.SignCount,
 		credentialIDEncoded,
@@ -169,6 +179,14 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 		username,
 	)
 	if err != nil {
+		if appErr, ok := err.(*weberror.AppError); ok {
+			httpErr := weberror.ToHTTPError(appErr)
+			httpErr.RespondAndLog(ctx)
+		} else {
+			appErr := weberror.UnexpectedError(err, "UpdateUserWebauthnCredentials")
+			httpErr := weberror.ToHTTPError(appErr)
+			httpErr.RespondAndLog(ctx)
+		}
 		return
 	}
 

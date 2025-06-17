@@ -8,52 +8,39 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/jamesyang124/webauthn-example/internal/weberror"
 	"github.com/valyala/fasthttp"
 	"go.uber.org/zap"
 )
 
-// SetWebauthnSessionData stores session data in Redis with a TTL and handles errors and logging.
-func SetWebauthnSessionDataWithErrorHandling(
+// SetWebauthnSessionData stores session data in Redis using TryIO pattern.
+func SetWebauthnSessionData(
 	ctx *fasthttp.RequestCtx,
 	redisClient *redis.Client,
 	sessionKey string,
 	sessionDataJSON []byte,
 	ttl time.Duration,
-) bool {
+) ([]byte, error) {
 	err := redisClient.Set(context.Background(), sessionKey, string(sessionDataJSON), ttl).Err()
 	if err != nil {
-		zap.L().Error("Failed to persist session data",
-			zap.Error(err),
-			zap.String("sessionKey", sessionKey),
-		)
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to persist session data"}`)
-		return false
+		return sessionDataJSON, weberror.RedisSessionSetError(err, sessionKey).Log()
 	}
-	return true
+	return sessionDataJSON, nil
 }
 
 // GetWebauthnSessionData retrieves session data from Redis by key and handles errors and logging.
-func GetWebauthnSessionDataWithErrorHandling(
+func GetWebauthnSessionData(
 	ctx *fasthttp.RequestCtx,
 	redisClient *redis.Client,
 	sessionKey string,
-) (string, bool) {
+) (string, error) {
 	redisSessionData, err := redisClient.Get(context.Background(), sessionKey).Result()
 	if err != nil {
 		if err == redis.Nil {
 			zap.L().Error("Session data not found", zap.String("sessionKey", sessionKey))
-			ctx.SetStatusCode(fasthttp.StatusBadRequest)
-			ctx.SetBodyString(`{"error": "Session data not found"}`)
-		} else {
-			zap.L().Error("Error retrieving session data",
-				zap.Error(err),
-				zap.String("sessionKey", sessionKey),
-			)
-			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-			ctx.SetBodyString(`{"error": "Failed to retrieve session data"}`)
+			return "", weberror.UserNotFoundError(err, "get user from redis").Log()
 		}
-		return "", false
+		return "", weberror.RedisSessionGetError(err, sessionKey).Log()
 	}
-	return redisSessionData, true
+	return redisSessionData, nil
 }

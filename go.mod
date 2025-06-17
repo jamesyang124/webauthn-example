@@ -3,6 +3,7 @@ module github.com/jamesyang124/webauthn-example
 go 1.23.6
 
 require (
+	github.com/IBM/fp-go v1.0.153
 	github.com/fasthttp/router v1.5.4
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-webauthn/webauthn v0.12.1

@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/jamesyang124/webauthn-example/internal/weberror"
 	"github.com/jamesyang124/webauthn-example/types"
 	"github.com/valyala/fasthttp"
-	"go.uber.org/zap"
 )
 
 var (
@@ -46,13 +46,9 @@ func BeginRegistration(
 ) (options *protocol.CredentialCreation, sessionData *webauthn.SessionData, ok bool) {
 	options, sessionData, err := WebAuthn.BeginRegistration(user)
 	if err != nil {
-		types.RespondWithError(
-			ctx,
-			fasthttp.StatusInternalServerError,
-			"Failed to begin WebAuthn registration",
-			"Error beginning WebAuthn registration",
-			err,
-		)
+		appErr := weberror.WebAuthnBeginRegistrationError(err)
+		httpErr := weberror.ToHTTPError(appErr)
+		httpErr.RespondAndLog(ctx)
 		return nil, nil, false
 	}
 	return options, sessionData, true
@@ -67,36 +63,30 @@ func FinishRegistration(
 ) (credential *webauthn.Credential, ok bool) {
 	credential, err := WebAuthn.FinishRegistration(user, sessionData, httpRequest)
 	if err != nil {
-		types.RespondWithError(
-			ctx,
-			fasthttp.StatusBadRequest,
-			`{"error": "Verification failed"}`,
-			"Error finishing WebAuthn registration",
-			err,
-		)
+		appErr := weberror.WebAuthnFinishRegistrationError(err)
+		httpErr := weberror.ToHTTPError(appErr)
+		httpErr.RespondAndLog(ctx)
 		return nil, false
 	}
 	return credential, true
 }
 
-// BeginLogin wraps WebAuthn.BeginLogin and handles errors.
+// BeginLogin wraps WebAuthn.BeginLogin using TryIO pattern.
 func BeginLogin(
 	ctx *fasthttp.RequestCtx,
 	user *types.WebAuthnUser,
-) (options *protocol.CredentialAssertion, sessionData *webauthn.SessionData, ok bool) {
+	beginLoginResponse *types.BeginLoginResponse,
+) (*types.BeginLoginResponse, error) {
+
 	options, sessionData, err := WebAuthn.BeginLogin(user)
 	if err != nil {
-		types.RespondWithError(
-			ctx,
-			fasthttp.StatusInternalServerError,
-			`{"error": "Failed to begin WebAuthn login"}`,
-			"Error beginning WebAuthn login",
-			err,
-		)
-		zap.L().Error("Error beginning WebAuthn login", zap.Error(err))
-		return nil, nil, false
+		return nil, weberror.WebAuthnBeginLoginError(err).Log()
 	}
-	return options, sessionData, true
+	*beginLoginResponse = types.BeginLoginResponse{
+		Options:     options,
+		SessionData: sessionData,
+	}
+	return beginLoginResponse, nil
 }
 
 // FinishLogin wraps WebAuthn.FinishLogin and handles errors.
@@ -105,19 +95,12 @@ func FinishLogin(
 	user *types.WebAuthnUser,
 	sessionData webauthn.SessionData,
 	httpRequest *http.Request,
-) (credential *webauthn.Credential, ok bool) {
+) (*webauthn.Credential, error) {
 	credential, err := WebAuthn.FinishLogin(user, sessionData, httpRequest)
 	if err != nil {
-		types.RespondWithError(
-			ctx,
-			fasthttp.StatusBadRequest,
-			`{"error": "Login verification failed"}`,
-			"Error finishing WebAuthn login",
-			err,
-		)
-		return nil, false
+		return nil, weberror.WebAuthnFinishLoginError(err).Log()
 	}
-	return credential, true
+	return credential, nil
 }
 
 // NewWebAuthnUser creates a WebAuthnUser with no credentials.
@@ -130,8 +113,18 @@ func NewWebAuthnUser(id, name, displayName string) *types.WebAuthnUser {
 	}
 }
 
-// NewWebAuthnUserWithCredential creates a WebAuthnUser with a credential and backup eligibility flag.
-func NewWebAuthnUserWithCredential(id, name, displayName string, credentialID, credentialPublicKey []byte) *types.WebAuthnUser {
+// NewWebAuthnUserWithCredential creates a WebAuthnUser with a credential using TryIO pattern.
+func NewWebAuthnUserWithCredential(id, name, displayName string, credentialID, credentialPublicKey []byte) (*types.WebAuthnUser, error) {
+
+	if len(credentialID) == 0 {
+		return nil, weberror.ErrCredentialIDEmpty
+	}
+	if len(credentialPublicKey) == 0 {
+		return nil, weberror.ErrCredentialPublicKeyEmpty
+	}
+	if id == "" || name == "" || displayName == "" {
+		return nil, weberror.ErrUserFieldsEmpty
+	}
 	return &types.WebAuthnUser{
 		ID:          id,
 		Name:        name,
@@ -142,7 +135,7 @@ func NewWebAuthnUserWithCredential(id, name, displayName string, credentialID, c
 				PublicKey: credentialPublicKey,
 			},
 		},
-	}
+	}, nil
 }
 
 // NewWebAuthnUserWithBackupEligible creates a WebAuthnUser with a credential and BackupEligible=true.
@@ -150,7 +143,7 @@ func NewWebAuthnUserWithBackupEligible(
 	id, name, displayName string,
 	credentialID, credentialPublicKey []byte,
 	backupEligible bool,
-) *types.WebAuthnUser {
+) (*types.WebAuthnUser, error) {
 	return &types.WebAuthnUser{
 		ID:          id,
 		Name:        name,
@@ -164,5 +157,5 @@ func NewWebAuthnUserWithBackupEligible(
 				},
 			},
 		},
-	}
+	}, nil
 }

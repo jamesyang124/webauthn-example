@@ -4,30 +4,24 @@ package user
 import (
 	"database/sql"
 
-	"github.com/valyala/fasthttp"
-	"go.uber.org/zap"
+	"github.com/jamesyang124/webauthn-example/internal/weberror"
 )
 
-// ExecAndRespondOnError executes a DB statement and handles error response if execution fails.
+// ExecAndRespondOnError executes a DB statement and returns error for handler-level handling.
 func ExecAndRespondOnError(
-	ctx *fasthttp.RequestCtx,
 	db *sql.DB,
 	query string,
 	args ...interface{},
 ) (sql.Result, error) {
 	result, err := db.Exec(query, args...)
 	if err != nil {
-		zap.L().Error("Error executing DB statement", zap.Error(err))
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to persist credential data"}`)
-		return nil, err
+		return nil, weberror.DatabaseQueryError(err, "execute DB statement")
 	}
 	return result, nil
 }
 
-// QueryUserByUsername queries the user by username and handles error responses.
+// QueryUserByUsername queries the user by username and returns error for handler-level handling.
 func QueryUserByUsername(
-	ctx *fasthttp.RequestCtx,
 	dbConn *sql.DB,
 	username string,
 	userID, usernameOut, createDate *string,
@@ -36,46 +30,34 @@ func QueryUserByUsername(
 		Scan(userID, usernameOut, createDate)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
-			ctx.SetBodyString(`{"error": "WebAuthnUser not found or invalid password"}`)
-		} else {
-			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-			ctx.SetBodyString(`{"error": "Database query error"}`)
+			return weberror.UserNotFoundError(err, "query user by username")
 		}
-		zap.L().Error("Error querying user", zap.Error(err))
-		return err
+		return weberror.DatabaseQueryError(err, "query user by username")
 	}
 	return nil
 }
 
-// QueryUserWebauthnByUsername queries the user and webauthn fields by username and handles error responses.
+// QueryUserWebauthnByUsername queries the user and webauthn fields by username using TryIO pattern.
 func QueryUserWebauthnByUsername(
-	ctx *fasthttp.RequestCtx,
 	dbConn *sql.DB,
 	username string,
 	userID, webauthnUserID, displayName, credentialIDEncoded, credentialPublicKeyEncoded *string,
-) error {
+) (string, error) {
 	err := dbConn.QueryRow(
 		"SELECT id, webauthn_user_id, webauthn_displayname, webauthn_credential_id, webauthn_credential_public_key FROM users WHERE username=$1",
 		username,
 	).Scan(userID, webauthnUserID, displayName, credentialIDEncoded, credentialPublicKeyEncoded)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			ctx.SetStatusCode(fasthttp.StatusNotFound)
-			ctx.SetBodyString(`{"error": "User not found"}`)
-		} else {
-			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-			ctx.SetBodyString(`{"error": "Database query error"}`)
+			return *userID, weberror.UserNotFoundError(err, "query user by username")
 		}
-		zap.L().Error("Error querying user", zap.Error(err))
-		return err
+		return *userID, weberror.DatabaseQueryError(err, "query user by username")
 	}
-	return nil
+	return *userID, nil
 }
 
-// UpdateUserWebauthnCredentials updates the user's webauthn credentials and handles error responses.
+// UpdateUserWebauthnCredentials updates the user's webauthn credentials and returns error for handler-level handling.
 func UpdateUserWebauthnCredentials(
-	ctx *fasthttp.RequestCtx,
 	db *sql.DB,
 	userID string,
 	signCount uint32,
@@ -92,23 +74,17 @@ func UpdateUserWebauthnCredentials(
 		username,
 	)
 	if err != nil {
-		zap.L().Error("Error updating user webauthn credentials", zap.Error(err))
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to persist credential data"}`)
-		return nil, err
+		return nil, weberror.DatabaseUpdateError(err, "update user webauthn credentials")
 	}
 	return result, nil
 }
 
-// UpdateUserWebauthnSignCount updates the user's webauthn sign count and handles error responses.
-func UpdateUserWebauthnSignCount(ctx *fasthttp.RequestCtx, db *sql.DB, signCount uint32, username string) (sql.Result, error) {
+// UpdateUserWebauthnSignCount updates the user's webauthn sign count and returns error for handler-level handling.
+func UpdateUserWebauthnSignCount(db *sql.DB, signCount uint32, username string) (sql.Result, error) {
 	query := `UPDATE users SET webauthn_sign_count = $1 WHERE username = $2`
 	result, err := db.Exec(query, signCount, username)
 	if err != nil {
-		zap.L().Error("Error updating user webauthn sign count", zap.Error(err))
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to update sign count"}`)
-		return nil, err
+		return nil, weberror.DatabaseUpdateError(err, "update user webauthn sign count")
 	}
 	return result, nil
 }
