@@ -26,62 +26,66 @@ import (
 // HandleAuthenticateOptions handles the WebAuthn authentication options using TryIO monad chains
 func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	// Shared variables for the chain
-	var requestData map[string]interface{}
-	var username string
-	var userID, webauthnUserID, displayName, credentialIDEncoded, credentialPublicKeyEncoded string
-	var credentialPublicKey []byte
-	var loginResponse types.BeginLoginResponse
+	var (
+		requestData                                     map[string]interface{}
+		username, userID, displayName, webauthnUserID   string
+		credentialIDEncoded, credentialPublicKeyEncoded string
+		credentialPublicKey                             []byte
+		loginResponse                                   types.BeginLoginResponse
+	)
 
+	// Parse request JSON body into map
 	types.NewTryIO(func() (string, error) {
 		return util.ParseJSONBody(ctx, &requestData)
 	}).
+		// Validate username from request data
 		ThenString(func(_ string) (string, error) {
-			// Validate username
 			return user.ValidateUsername(ctx, requestData, &username)
 		}).
+		// Query user WebAuthn data from database
 		ThenString(func(validatedUsername string) (string, error) {
-			// Query user data
 			return user.QueryUserWebauthnByUsername(
 				db, username,
 				&userID, &webauthnUserID, &displayName,
 				&credentialIDEncoded, &credentialPublicKeyEncoded,
 			)
 		}).
+		// Decode base64 encoded credential public key
 		ThenBytes(func(_ string) ([]byte, error) {
-			// Decode credential public key
 			return util.DecodeCredentialPublicKey(
 				ctx, credentialPublicKeyEncoded,
 				&credentialPublicKey,
 			)
 		}).
+		// Decode base64 encoded credential ID
 		ThenBytes(func(pubKey []byte) ([]byte, error) {
-			// Decode credential ID and store it
 			return util.DecodeCredentialID(ctx, credentialIDEncoded)
 		}).
+		// Create WebAuthn user with decoded credentials
 		ThenWebAuthnUser(func(credentialID []byte) (*types.WebAuthnUser, error) {
-			// Create WebAuthn user and store it
 			return util.NewWebAuthnUserWithCredential(
 				webauthnUserID, username, displayName,
 				credentialID, credentialPublicKey,
 			)
 		}).
+		// Begin WebAuthn login process and generate options
 		ThenBeginLoginResponse(func(webAuthnUser *types.WebAuthnUser) (*types.BeginLoginResponse, error) {
-			// Begin login and store response
 			return util.BeginLogin(ctx, webAuthnUser, &loginResponse)
 		}).
+		// Marshal session data to JSON
 		ThenBytes(func(loginResponseData *types.BeginLoginResponse) ([]byte, error) {
 			return util.MarshalAndRespondOnError(ctx, loginResponse.SessionData)
 		}).
+		// Store session data in Redis with TTL
 		ThenBytes(func(sessionDataJSON []byte) ([]byte, error) {
-			// Store session data in Redis
 			return session.SetWebauthnSessionData(
 				ctx, redisClient,
 				"webauthn_login_session:"+username,
 				sessionDataJSON, 86400*time.Second,
 			)
 		}).
+		// Marshal login options for client response
 		ThenBytes(func(_ []byte) ([]byte, error) {
-			// Marshal final response
 			return util.MarshalAndRespondOnError(ctx, loginResponse.Options)
 		}).
 		Match(
@@ -112,13 +116,16 @@ func HandleAuthenticateOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient
 
 // HandleAuthenticateVerification processes the verification of WebAuthn authentication using a TryIO monad chain
 func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
-	var requestData map[string]interface{}
-	var username string
-	var sessionData webauthn.SessionData
-	var credentialID, credentialPublicKey []byte
-	var WebAuthnUser types.WebAuthnUser
-	var userID, webauthnUserID, displayName, credentialIDEncoded, credentialPublicKeyEncoded string
-	var convertedRequest http.Request
+
+	var (
+		credentialID, credentialPublicKey               []byte
+		requestData                                     map[string]interface{}
+		username, userID, webauthnUserID, displayName   string
+		credentialIDEncoded, credentialPublicKeyEncoded string
+		sessionData                                     webauthn.SessionData
+		WebAuthnUser                                    types.WebAuthnUser
+		convertedRequest                                http.Request
+	)
 
 	types.NewTryIO(func() (string, error) {
 		return util.ParseJSONBody(ctx, &requestData)
@@ -153,8 +160,6 @@ func HandleAuthenticateVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisC
 			)
 		}).
 		ThenBytes(func(_ string) ([]byte, error) {
-			// TODO: will refactor this later
-			// Query user by username and webauthn fields
 			return util.DecodeCredentialID(ctx, credentialIDEncoded)
 		}).
 		ThenBytes(func(credID []byte) ([]byte, error) {

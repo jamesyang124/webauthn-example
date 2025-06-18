@@ -28,13 +28,16 @@ import (
 func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	var requestData map[string]interface{}
 	var username string
+	// Parse request JSON body into map
 	if _, err := util.ParseJSONBody(ctx, &requestData); err != nil {
 		return
 	}
 
+	// Validate username from request data
 	_, _ = user.ValidateUsername(ctx, requestData, &username)
 
 	var userID, createDate string
+	// Query user by username from database
 	err := user.QueryUserByUsername(db, username, &userID, &username, &createDate)
 	if err != nil {
 		if appErr, ok := err.(*weberror.AppError); ok {
@@ -48,6 +51,7 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *re
 		return
 	}
 
+	// Generate new UUID for WebAuthn user ID
 	webauthnUserID, err := uuid.NewV7()
 	if err != nil {
 		appErr := weberror.UUIDGenerationError(err)
@@ -56,28 +60,33 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *re
 		return
 	}
 
+	// Create new WebAuthn user struct
 	WebAuthnUser := util.NewWebAuthnUser(
 		webauthnUserID.String(),
 		username,
 		username,
 	)
 
+	// Begin WebAuthn registration process
 	options, sessionData, ok := util.BeginRegistration(ctx, WebAuthnUser)
 	if !ok {
 		return
 	}
 
 	sessionKey := "webauthn_session:" + username
+	// Marshal session data to JSON
 	sessionDataJSON, err := util.MarshalAndRespondOnError(ctx, sessionData)
 	if err != nil {
 		return
 	}
+	// Store session data in Redis with TTL
 	_, err = session.SetWebauthnSessionData(ctx, redisClient, sessionKey, sessionDataJSON, 86400*time.Second)
 
 	if err != nil {
 		return
 	}
 
+	// Marshal registration options for response
 	responseJSON, err := util.MarshalAndRespondOnError(ctx, options)
 	if err != nil {
 		return
@@ -93,10 +102,12 @@ func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *re
 // HandleRegisterVerification handles the verification of WebAuthn registration
 func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
 	var requestData map[string]interface{}
+	// Parse request JSON body into map
 	if _, err := util.ParseJSONBody(ctx, &requestData); err != nil {
 		return
 	}
 
+	// Validate username and display name from request
 	username, _, err := user.ValidateUsernameAndDisplayname(ctx, requestData)
 	if err != nil {
 		return
@@ -104,15 +115,18 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 
 	sessionKey := "webauthn_session:" + username
 	var sessionData webauthn.SessionData
+	// Retrieve session data from Redis
 	redisSessionData, _ := session.GetWebauthnSessionData(
 		ctx,
 		redisClient,
 		sessionKey,
 	)
+	// Unmarshal session data from JSON
 	_, _ = util.UnmarshalAndRespondOnError(ctx, []byte(redisSessionData), &sessionData)
 
 	zap.L().Info("Register verify sessionDataStr", zap.String("sessionDataStr", redisSessionData))
 
+	// Marshal credential data from request
 	credentialData, err := util.MarshalAndRespondOnError(ctx, requestData["credential"])
 	if err != nil {
 		return
@@ -120,6 +134,7 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 
 	var credentialMap map[string]interface{}
 
+	// Parse credential data as JSON
 	if _, err := util.ParseJSONBody(ctx, &credentialMap); err != nil {
 		appErr := weberror.CredentialDataInvalidError(err)
 		httpErr := weberror.ToHTTPError(appErr)
@@ -131,6 +146,7 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 	zap.L().Info("Overridden PostBody", zap.String("postBody", string(ctx.PostBody())))
 
 	var httpRequest http.Request
+	// Convert FastHTTP request to standard HTTP request
 	err = fasthttpadaptor.ConvertRequest(ctx, &httpRequest, true)
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
@@ -140,6 +156,7 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 	}
 
 	var userID, createDate string
+	// Query user by username from database
 	err = user.QueryUserByUsername(db, username, &userID, &username, &createDate)
 	if err != nil {
 		if appErr, ok := err.(*weberror.AppError); ok {
@@ -153,23 +170,28 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 		return
 	}
 
+	// Create WebAuthn user with session data
 	WebAuthnUser := util.NewWebAuthnUser(
 		string(sessionData.UserID),
 		username,
 		username,
 	)
 
+	// Finish WebAuthn registration process
 	credential, ok := util.FinishRegistration(ctx, WebAuthnUser, sessionData, &httpRequest)
 	if !ok {
 		return
 	}
 
+	// Encode credential public key for storage
 	credentialPublicKeyEncoded := util.EncodeRawURLEncoding(credential.PublicKey)
 	zap.L().Info("credentialPublicKeyEncoded", zap.String("credentialPublicKeyEncoded", credentialPublicKeyEncoded))
 
+	// Encode credential ID for storage
 	credentialIDEncoded := util.EncodeRawURLEncoding(credential.ID)
 	zap.L().Info("credentialIDEncoded", zap.String("credentialIDEncoded", credentialIDEncoded))
 
+	// Update user with WebAuthn credentials in database
 	result, err := user.UpdateUserWebauthnCredentials(db,
 		WebAuthnUser.ID,
 		credential.Authenticator.SignCount,
@@ -190,6 +212,7 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 		return
 	}
 
+	// Check number of rows affected by update
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		zap.L().Error("Error persisting credential data", zap.Error(err))
@@ -205,6 +228,7 @@ func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClien
 		"message":    "Verification successful",
 		"path":       string(ctx.Path()),
 	}
+	// Marshal final response data
 	responseJSON, err := util.MarshalAndRespondOnError(ctx, responseData)
 	if err != nil {
 		return

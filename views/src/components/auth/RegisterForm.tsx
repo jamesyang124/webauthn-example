@@ -23,6 +23,7 @@ const handleWebAuthnRegistration = async (responseData: RegistrationResponseData
       },
     };
 
+    // Create WebAuthn credential using browser API
     const credential = await navigator.credentials.create(options);
     console.log(credential);
 
@@ -32,6 +33,7 @@ const handleWebAuthnRegistration = async (responseData: RegistrationResponseData
       displayname: options.publicKey.user.displayName,
     };
 
+    // Send credential to server for verification
     const response = await fetch(`${import.meta.env.VITE_API_URL}/webauthn/register/verification`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -39,6 +41,7 @@ const handleWebAuthnRegistration = async (responseData: RegistrationResponseData
       mode: 'cors', // Added to avoid CORS issues
     });
 
+    // Parse server response
     const verificationResponse = await response.json();
     console.log('Registration verification response:', verificationResponse);
 
@@ -59,6 +62,7 @@ const handleRegistrationFlow = async (username: string) => {
       return;
     }
     console.log('Registration options ajax request in:');
+    // Request registration options from server
     const response = await fetch(`${import.meta.env.VITE_API_URL}/webauthn/register/options`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -69,8 +73,10 @@ const handleRegistrationFlow = async (username: string) => {
       throw new Error(`Registration failed: ${response.statusText}`);
     }
 
+    // Parse registration options response
     const responseData: RegistrationResponseData = await response.json();
     console.log('Registration response:', responseData);
+    // Process WebAuthn registration with received options
     await handleWebAuthnRegistration(responseData);
   } catch (error) {
     console.error('Error during registration:', error);
@@ -122,6 +128,7 @@ const RegisterForm = () => {
 
     setLoading(true);
 
+    // Execute complete registration flow
     await handleRegistrationFlow(formData.username);
 
     setLoading(false);
