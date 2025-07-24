@@ -14,11 +14,35 @@ services:
           ignore:
             - db_data/
             - db/
+            - views/
     ports:
       - "8080:8080"
     depends_on:
       - db
       - redis
+
+  frontend:
+    image: node:18-alpine
+    container_name: webauthn-frontend
+    working_dir: /app
+    volumes:
+      - ./views:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    develop:
+      watch:
+        - action: sync
+          path: ./views/src
+          target: /app/src
+        - action: sync
+          path: ./views/public
+          target: /app/public
+        - action: rebuild
+          path: ./views/package.json
+          target: /app/package.json
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080
 
   db:
     image: postgres:13
