@@ -13,228 +13,219 @@ import (
 	_ "github.com/lib/pq" // Justify blank import: required for PostgreSQL driver registration
 
 	"github.com/go-redis/redis/v8"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	session "github.com/jamesyang124/webauthn-example/internal/session"
 	user "github.com/jamesyang124/webauthn-example/internal/user"
 	util "github.com/jamesyang124/webauthn-example/internal/util"
 	"github.com/jamesyang124/webauthn-example/internal/weberror"
+	"github.com/jamesyang124/webauthn-example/types"
 	fasthttp "github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"go.uber.org/zap"
 )
 
-// HandleRegisterOptions handles the WebAuthn registration options
+// HandleRegisterOptions handles the WebAuthn registration options using TryIO monad chains
 func HandleRegisterOptions(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
-	var requestData map[string]interface{}
-	var username string
-	// Parse request JSON body into map
-	if _, err := util.ParseJSONBody(ctx, &requestData); err != nil {
-		return
-	}
-
-	// Validate username from request data
-	_, _ = user.ValidateUsername(ctx, requestData, &username)
-
-	var userID, createDate string
-	// Query user by username from database
-	err := user.QueryUserByUsername(db, username, &userID, &username, &createDate)
-	if err != nil {
-		if appErr, ok := err.(*weberror.AppError); ok {
-			httpErr := weberror.ToHTTPError(appErr)
-			httpErr.RespondAndLog(ctx)
-		} else {
-			appErr := weberror.UnexpectedError(err, "QueryUserByUsername")
-			httpErr := weberror.ToHTTPError(appErr)
-			httpErr.RespondAndLog(ctx)
-		}
-		return
-	}
-
-	// Generate new UUID for WebAuthn user ID
-	webauthnUserID, err := uuid.NewV7()
-	if err != nil {
-		appErr := weberror.UUIDGenerationError(err)
-		httpErr := weberror.ToHTTPError(appErr)
-		httpErr.RespondAndLog(ctx)
-		return
-	}
-
-	// Create new WebAuthn user struct
-	WebAuthnUser := util.NewWebAuthnUser(
-		webauthnUserID.String(),
-		username,
-		username,
+	// Shared variables for the chain
+	var (
+		requestData    map[string]interface{}
+		username       string
+		webauthnUserID uuid.UUID
+		options        *protocol.CredentialCreation
+		sessionData    *webauthn.SessionData
 	)
 
-	// Begin WebAuthn registration process
-	options, sessionData, ok := util.BeginRegistration(ctx, WebAuthnUser)
-	if !ok {
-		return
-	}
-
-	sessionKey := "webauthn_session:" + username
-	// Marshal session data to JSON
-	sessionDataJSON, err := util.MarshalAndRespondOnError(ctx, sessionData)
-	if err != nil {
-		return
-	}
-	// Store session data in Redis with TTL
-	_, err = session.SetWebauthnSessionData(ctx, redisClient, sessionKey, sessionDataJSON, 86400*time.Second)
-
-	if err != nil {
-		return
-	}
-
-	// Marshal registration options for response
-	responseJSON, err := util.MarshalAndRespondOnError(ctx, options)
-	if err != nil {
-		return
-	}
-
-	ctx.SetContentType("application/json")
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetBody(responseJSON)
-
-	zap.L().Info("HandleRegister called")
+	// Parse request JSON body into map
+	types.NewTryIO(func() (string, error) {
+		return util.ParseJSONBody(ctx, &requestData)
+	}).
+		// Validate username from request data
+		ThenString(func(_ string) (string, error) {
+			return user.ValidateUsername(ctx, requestData, &username)
+		}).
+		// Query user by username from database
+		ThenString(func(validatedUsername string) (string, error) {
+			var userID, createDate string
+			return user.QueryUserByUsername(db, username, &userID, &username, &createDate)
+		}).
+		// Generate new UUID for WebAuthn user ID
+		ThenUUID(func(_ string) (uuid.UUID, error) {
+			return uuid.NewV7()
+		}).
+		// Create new WebAuthn user struct
+		ThenWebAuthnUser(func(uuidVal uuid.UUID) (*types.WebAuthnUser, error) {
+			webauthnUserID = uuidVal
+			return util.NewWebAuthnUser(
+				webauthnUserID.String(),
+				username,
+				username,
+			), nil
+		}).
+		// Begin WebAuthn registration process
+		ThenCredentialCreation(func(webAuthnUser *types.WebAuthnUser) (*protocol.CredentialCreation, error) {
+			opts, sessData, ok := util.BeginRegistration(ctx, webAuthnUser)
+			if !ok {
+				return nil, weberror.WebAuthnBeginRegistrationError(nil)
+			}
+			options = opts
+			sessionData = sessData
+			return options, nil
+		}).
+		// Marshal session data to JSON
+		ThenBytes(func(_ *protocol.CredentialCreation) ([]byte, error) {
+			return util.MarshalAndRespondOnError(ctx, sessionData)
+		}).
+		// Store session data in Redis with TTL
+		ThenBytes(func(sessionDataJSON []byte) ([]byte, error) {
+			sessionKey := "webauthn_session:" + username
+			return session.SetWebauthnSessionData(ctx, redisClient, sessionKey, sessionDataJSON, 86400*time.Second)
+		}).
+		// Marshal registration options for response
+		ThenBytes(func(_ []byte) ([]byte, error) {
+			return util.MarshalAndRespondOnError(ctx, options)
+		}).
+		Match(
+			func(err error) {
+				// Handle error through weberror system
+				if appErr, ok := err.(*weberror.AppError); ok {
+					httpErr := weberror.ToHTTPError(appErr)
+					httpErr.RespondAndLog(ctx)
+				} else {
+					appErr := weberror.UnexpectedError(err, "HandleRegisterOptions")
+					httpErr := weberror.ToHTTPError(appErr)
+					httpErr.RespondAndLog(ctx)
+				}
+			},
+			func(responseJSON []byte) {
+				// Send success response
+				ctx.SetContentType("application/json")
+				ctx.SetStatusCode(fasthttp.StatusOK)
+				ctx.SetBody(responseJSON)
+				zap.L().Info("HandleRegisterOptions completed successfully")
+			},
+		)
 }
 
-// HandleRegisterVerification handles the verification of WebAuthn registration
+// HandleRegisterVerification handles the verification of WebAuthn registration using TryIO monad chains
 func HandleRegisterVerification(ctx *fasthttp.RequestCtx, db *sql.DB, redisClient *redis.Client) {
-	var requestData map[string]interface{}
+	// Shared variables for the chain
+	var (
+		requestData       map[string]interface{}
+		username          string
+		sessionData       webauthn.SessionData
+		convertedRequest  http.Request
+		webAuthnUser      *types.WebAuthnUser
+		credential        *webauthn.Credential
+	)
+
 	// Parse request JSON body into map
-	if _, err := util.ParseJSONBody(ctx, &requestData); err != nil {
-		return
-	}
-
-	// Validate username and display name from request
-	username, _, err := user.ValidateUsernameAndDisplayname(ctx, requestData)
-	if err != nil {
-		return
-	}
-
-	sessionKey := "webauthn_session:" + username
-	var sessionData webauthn.SessionData
-	// Retrieve session data from Redis
-	redisSessionData, _ := session.GetWebauthnSessionData(
-		ctx,
-		redisClient,
-		sessionKey,
-	)
-	// Unmarshal session data from JSON
-	_, _ = util.UnmarshalAndRespondOnError(ctx, []byte(redisSessionData), &sessionData)
-
-	zap.L().Info("Register verify sessionDataStr", zap.String("sessionDataStr", redisSessionData))
-
-	// Marshal credential data from request
-	credentialData, err := util.MarshalAndRespondOnError(ctx, requestData["credential"])
-	if err != nil {
-		return
-	}
-
-	var credentialMap map[string]interface{}
-
-	// Parse credential data as JSON
-	if _, err := util.ParseJSONBody(ctx, &credentialMap); err != nil {
-		appErr := weberror.CredentialDataInvalidError(err)
-		httpErr := weberror.ToHTTPError(appErr)
-		httpErr.RespondAndLog(ctx)
-		return
-	}
-
-	ctx.Request.SetBody(credentialData)
-	zap.L().Info("Overridden PostBody", zap.String("postBody", string(ctx.PostBody())))
-
-	var httpRequest http.Request
-	// Convert FastHTTP request to standard HTTP request
-	err = fasthttpadaptor.ConvertRequest(ctx, &httpRequest, true)
-	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to convert request"}`)
-		zap.L().Error("Error converting fasthttp request", zap.Error(err))
-		return
-	}
-
-	var userID, createDate string
-	// Query user by username from database
-	err = user.QueryUserByUsername(db, username, &userID, &username, &createDate)
-	if err != nil {
-		if appErr, ok := err.(*weberror.AppError); ok {
-			httpErr := weberror.ToHTTPError(appErr)
-			httpErr.RespondAndLog(ctx)
-		} else {
-			appErr := weberror.UnexpectedError(err, "QueryUserByUsername")
-			httpErr := weberror.ToHTTPError(appErr)
-			httpErr.RespondAndLog(ctx)
-		}
-		return
-	}
-
-	// Create WebAuthn user with session data
-	WebAuthnUser := util.NewWebAuthnUser(
-		string(sessionData.UserID),
-		username,
-		username,
-	)
-
-	// Finish WebAuthn registration process
-	credential, ok := util.FinishRegistration(ctx, WebAuthnUser, sessionData, &httpRequest)
-	if !ok {
-		return
-	}
-
-	// Encode credential public key for storage
-	credentialPublicKeyEncoded := util.EncodeRawURLEncoding(credential.PublicKey)
-	zap.L().Info("credentialPublicKeyEncoded", zap.String("credentialPublicKeyEncoded", credentialPublicKeyEncoded))
-
-	// Encode credential ID for storage
-	credentialIDEncoded := util.EncodeRawURLEncoding(credential.ID)
-	zap.L().Info("credentialIDEncoded", zap.String("credentialIDEncoded", credentialIDEncoded))
-
-	// Update user with WebAuthn credentials in database
-	result, err := user.UpdateUserWebauthnCredentials(db,
-		WebAuthnUser.ID,
-		credential.Authenticator.SignCount,
-		credentialIDEncoded,
-		credentialPublicKeyEncoded,
-		username,
-		username,
-	)
-	if err != nil {
-		if appErr, ok := err.(*weberror.AppError); ok {
-			httpErr := weberror.ToHTTPError(appErr)
-			httpErr.RespondAndLog(ctx)
-		} else {
-			appErr := weberror.UnexpectedError(err, "UpdateUserWebauthnCredentials")
-			httpErr := weberror.ToHTTPError(appErr)
-			httpErr.RespondAndLog(ctx)
-		}
-		return
-	}
-
-	// Check number of rows affected by update
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		zap.L().Error("Error persisting credential data", zap.Error(err))
-		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-		ctx.SetBodyString(`{"error": "Failed to persist credential data"}`)
-		return
-	}
-	zap.L().Info("rows affected", zap.Int64("rowsAffected", rowsAffected))
-
-	responseData := map[string]interface{}{
-		"credential": credential,
-		"payload":    requestData,
-		"message":    "Verification successful",
-		"path":       string(ctx.Path()),
-	}
-	// Marshal final response data
-	responseJSON, err := util.MarshalAndRespondOnError(ctx, responseData)
-	if err != nil {
-		return
-	}
-
-	ctx.SetContentType("application/json")
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetBody(responseJSON)
+	types.NewTryIO(func() (string, error) {
+		return util.ParseJSONBody(ctx, &requestData)
+	}).
+		// Validate username and display name from request
+		ThenString(func(_ string) (string, error) {
+			validatedUsername, _, err := user.ValidateUsernameAndDisplayname(ctx, requestData)
+			if err != nil {
+				return "", err
+			}
+			username = validatedUsername
+			return username, nil
+		}).
+		// Retrieve session data from Redis
+		ThenString(func(_ string) (string, error) {
+			sessionKey := "webauthn_session:" + username
+			return session.GetWebauthnSessionData(ctx, redisClient, sessionKey)
+		}).
+		// Unmarshal session data from JSON
+		ThenBytes(func(redisSessionData string) ([]byte, error) {
+			zap.L().Info("Register verify sessionDataStr", zap.String("sessionDataStr", redisSessionData))
+			return util.UnmarshalAndRespondOnError(ctx, []byte(redisSessionData), &sessionData)
+		}).
+		// Marshal credential data from request
+		ThenBytes(func(_ []byte) ([]byte, error) {
+			return util.MarshalAndRespondOnError(ctx, requestData["credential"])
+		}).
+		// Convert FastHTTP request to standard HTTP request
+		ThenHttpRequest(func(credentialData []byte) (*http.Request, error) {
+			ctx.Request.SetBody(credentialData)
+			zap.L().Info("Overridden PostBody", zap.String("postBody", string(ctx.PostBody())))
+			return util.ConvertFastHTTPToHTTPRequest(ctx, &convertedRequest)
+		}).
+		// Query user by username from database
+		ThenString(func(req *http.Request) (string, error) {
+			var userID, createDate string
+			return user.QueryUserByUsername(db, username, &userID, &username, &createDate)
+		}).
+		// Create WebAuthn user with session data
+		ThenWebAuthnUser(func(validatedUsername string) (*types.WebAuthnUser, error) {
+			webAuthnUser = util.NewWebAuthnUser(
+				string(sessionData.UserID),
+				username,
+				username,
+			)
+			return webAuthnUser, nil
+		}).
+		// Finish WebAuthn registration process
+		ThenWebAuthnCredential(func(user *types.WebAuthnUser) (*webauthn.Credential, error) {
+			cred, ok := util.FinishRegistration(ctx, user, sessionData, &convertedRequest)
+			if !ok {
+				return nil, weberror.WebAuthnFinishRegistrationError(nil)
+			}
+			credential = cred
+			return credential, nil
+		}).
+		// Update user with WebAuthn credentials in database
+		ThenSQLResult(func(cred *webauthn.Credential) (sql.Result, error) {
+			// Encode credential public key and ID for storage
+			credentialPublicKeyEncoded := util.EncodeRawURLEncoding(cred.PublicKey)
+			credentialIDEncoded := util.EncodeRawURLEncoding(cred.ID)
+			
+			zap.L().Info("credentialPublicKeyEncoded", zap.String("credentialPublicKeyEncoded", credentialPublicKeyEncoded))
+			zap.L().Info("credentialIDEncoded", zap.String("credentialIDEncoded", credentialIDEncoded))
+			
+			return user.UpdateUserWebauthnCredentials(db,
+				webAuthnUser.ID,
+				cred.Authenticator.SignCount,
+				credentialIDEncoded,
+				credentialPublicKeyEncoded,
+				username,
+				username,
+			)
+		}).
+		// Check rows affected and marshal final response
+		ThenBytes(func(result sql.Result) ([]byte, error) {
+			rowsAffected, err := result.RowsAffected()
+			if err != nil {
+				return nil, weberror.DatabaseQueryError(err, "get rows affected")
+			}
+			zap.L().Info("rows affected", zap.Int64("rowsAffected", rowsAffected))
+			
+			responseData := map[string]interface{}{
+				"credential": credential,
+				"payload":    requestData,
+				"message":    "Verification successful",
+				"path":       string(ctx.Path()),
+			}
+			return util.MarshalAndRespondOnError(ctx, responseData)
+		}).
+		Match(
+			func(err error) {
+				// Handle error through weberror system
+				if appErr, ok := err.(*weberror.AppError); ok {
+					httpErr := weberror.ToHTTPError(appErr)
+					httpErr.RespondAndLog(ctx)
+				} else {
+					appErr := weberror.UnexpectedError(err, "HandleRegisterVerification")
+					httpErr := weberror.ToHTTPError(appErr)
+					httpErr.RespondAndLog(ctx)
+				}
+			},
+			func(responseJSON []byte) {
+				// Send success response
+				ctx.SetContentType("application/json")
+				ctx.SetStatusCode(fasthttp.StatusOK)
+				ctx.SetBody(responseJSON)
+			},
+		)
 }

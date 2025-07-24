@@ -11,7 +11,9 @@ import (
 
 	"github.com/IBM/fp-go/either"
 	"github.com/IBM/fp-go/ioeither"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 )
 
 // TryIO runs a function returning (T, error) and wraps it as an IOEither for functional error handling.
@@ -94,5 +96,25 @@ func (tc *TryIOChain[T]) ThenSQLResult(fn func(T) (sql.Result, error)) *TryIOCha
 
 // ThenBeginLoginResponse transforms to *BeginLoginResponse type.
 func (tc *TryIOChain[T]) ThenBeginLoginResponse(fn func(T) (*BeginLoginResponse, error)) *TryIOChain[*BeginLoginResponse] {
+	return ThenTyped(tc, fn)
+}
+
+// ThenUUID transforms to uuid.UUID type.
+func (tc *TryIOChain[T]) ThenUUID(fn func(T) (uuid.UUID, error)) *TryIOChain[uuid.UUID] {
+	return ThenTyped(tc, fn)
+}
+
+// ThenWebAuthnSessionData transforms to webauthn.SessionData type.
+func (tc *TryIOChain[T]) ThenWebAuthnSessionData(fn func(T) (webauthn.SessionData, error)) *TryIOChain[webauthn.SessionData] {
+	return ThenTyped(tc, fn)
+}
+
+// ThenCredentialCreation transforms to *protocol.CredentialCreation type.
+func (tc *TryIOChain[T]) ThenCredentialCreation(fn func(T) (*protocol.CredentialCreation, error)) *TryIOChain[*protocol.CredentialCreation] {
+	return ThenTyped(tc, fn)
+}
+
+// ThenInt64 transforms to int64 type.
+func (tc *TryIOChain[T]) ThenInt64(fn func(T) (int64, error)) *TryIOChain[int64] {
 	return ThenTyped(tc, fn)
 }

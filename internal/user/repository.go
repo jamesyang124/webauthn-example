@@ -20,21 +20,21 @@ func ExecAndRespondOnError(
 	return result, nil
 }
 
-// QueryUserByUsername queries the user by username and returns error for handler-level handling.
+// QueryUserByUsername queries the user by username using TryIO pattern.
 func QueryUserByUsername(
 	dbConn *sql.DB,
 	username string,
 	userID, usernameOut, createDate *string,
-) error {
+) (string, error) {
 	err := dbConn.QueryRow("SELECT id, username, created_at FROM users WHERE username=$1", username).
 		Scan(userID, usernameOut, createDate)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return weberror.UserNotFoundError(err, "query user by username")
+			return "", weberror.UserNotFoundError(err, "query user by username")
 		}
-		return weberror.DatabaseQueryError(err, "query user by username")
+		return "", weberror.DatabaseQueryError(err, "query user by username")
 	}
-	return nil
+	return *usernameOut, nil
 }
 
 // QueryUserWebauthnByUsername queries the user and webauthn fields by username using TryIO pattern.
