@@ -18,6 +18,7 @@ const handleWebAuthnLogin = async (responseData: AuthenticationResponseData, use
       },
     };
 
+    // Get WebAuthn assertion from browser
     const assertionResponse = await navigator.credentials.get(options);
     console.log('authentication assertionResponse', assertionResponse);
 
@@ -26,6 +27,7 @@ const handleWebAuthnLogin = async (responseData: AuthenticationResponseData, use
       username: username
     };
 
+    // Send assertion to server for authentication verification
     const response = await fetch(`${import.meta.env.VITE_API_URL}/webauthn/authenticate/verification`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -33,6 +35,7 @@ const handleWebAuthnLogin = async (responseData: AuthenticationResponseData, use
       mode: 'cors', // Added to avoid CORS issues
     });
 
+    // Parse authentication verification response
     const verificationResponse = await response.json();
     console.log('Authentication verification response:', verificationResponse);
 
@@ -53,12 +56,14 @@ const handleLoginFlow = async (username: string) => {
       alert('Please enter a username.');
       return;
     }
+    // Request authentication options from server
     const response = await fetch(`${import.meta.env.VITE_API_URL}/webauthn/authenticate/options`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ "username": username }),
       mode: 'cors', // Added to avoid CORS issues
     });
+    // Parse authentication options response
     const responseData: AuthenticationResponseData = await response.json();
     console.log('Authentication response:', responseData);
 
@@ -86,6 +91,7 @@ const LoginForm = () => {
     e.preventDefault();
     setLoading(true);
 
+    // Execute complete login flow
     await handleLoginFlow(formData.username);
 
     setLoading(false);

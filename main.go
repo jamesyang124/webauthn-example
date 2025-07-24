@@ -22,7 +22,7 @@ import (
 func main() {
 
 	// Initialize zap logger
-	logger, _ := zap.NewProduction()
+	logger, _ := zap.NewDevelopment()
 	zap.ReplaceGlobals(logger)
 	defer func() {
 		if err := logger.Sync(); err != nil {
